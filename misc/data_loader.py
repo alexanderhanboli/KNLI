@@ -2,7 +2,7 @@ from __future__ import  print_function, division
 import time
 import torch
 from torch.utils.data import Dataset
-from pytorch_pretrained_bert import BertTokenizer, BertModel
+# from pytorch_pretrained_bert import BertTokenizer, BertModel
 import numpy as np
 import os
 import json

@@ -14,7 +14,7 @@ import json
 from itertools import compress
 from collections import OrderedDict
 from misc.utilities import timeSince, dump_to_json, create_dir, Preload_embedding, read_json_file
-from misc.torch_utility import get_state, load_model_states, PenalizedConfidenceEntropy
+from misc.torch_utility import get_state, load_model_states
 from misc.data_loader import BatchDataLoader
 
 import sys
@@ -25,10 +25,11 @@ parser = argparse.ArgumentParser()
 # Input data
 parser.add_argument('--fp_train', default='./data/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli_data.json')
-parser.add_argument('--fp_embd',  default='./data/wiki-news-300d-1M-subword.vec')
+parser.add_argument('--fp_embd',  default='./data/wiki.en.bin')
 
 parser.add_argument('--fp_word_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_dim',  default=300, type=int)
+parser.add_argument('--fp_embd_context',  default='')
 parser.add_argument('--fp_embd_type',  default='generic')
 parser.add_argument('--bert_embd', default=False, type=bool)
 parser.add_argument('--bert_layers', default=10, type=int)
@@ -36,14 +37,14 @@ parser.add_argument('--bert_layers', default=10, type=int)
 # Module optim options
 parser.add_argument('--batch_size', default=400, type=int)
 parser.add_argument('--weight_decay', default=0.001, type=float)
-parser.add_argument('--beta1', default=0.9, type=float)
+parser.add_argument('--beta1', default=0.5, type=float)
 parser.add_argument('--beta2', default=0.999, type=float)
 
 # Model params
 parser.add_argument('--droprate', type=float, default=0.1)
 parser.add_argument('--hidden_size', type=int, default=512)
-parser.add_argument('--num_layers', type=int, default=2)
-parser.add_argument('--heads', type=int, default=3)
+parser.add_argument('--num_layers', type=int, default=4)
+parser.add_argument('--heads', type=int, default=4)
 
 #others
 parser.add_argument('--loader_num_workers', type=int, default=5)
@@ -62,9 +63,9 @@ parser.add_argument('--load_model', default=False, type=bool)
 # parser.add_argument('--rule_based', default=False, type=bool)
 # parser.add_argument('--sharpening', default=True, type=bool)
 # parser.add_argument('--weight_thrd', default=0.10, type=float) # threshold for selection
-parser.add_argument('--sim_thrd', default=0.80, type=float) # threshold for similarity
+# parser.add_argument('--sim_thrd', default=0.80, type=float) # threshold for similarity
 parser.add_argument('--neg_sampling_ratio', default=1, type=float) # sampling ration: 1 means 50-50, 1< means less negative example, 0 means no negative example
-parser.add_argument('--alpha', default=1.0, type=float)
+parser.add_argument('--alpha', default=0.25, type=float)
 
 #
 parser.add_argument('--debug', default=False, type=bool)
@@ -111,7 +112,7 @@ def train(data, use_mask = True):
 
     # calculate loss
     criterion = nn.CrossEntropyLoss()
-    loss = criterion(matching.float(), label.float())
+    loss = criterion(matching.float(), label.long())
 
     # do backprop and udpate
     loss.backward()
@@ -130,7 +131,7 @@ def evaluate(data, use_mask = True, print_out = False):
     model.eval() # switch off the dropout if applied
 
     q1, a1, premise, hypothesis, label = data['q1'], data['q2'], data['qstr'], data['astr'], data['label']
-    q1, a1, premise, hypothesis, label = Variable(q1), Variable(a1), Variable(premise), Variable(hypothesis), Variable(label)
+    q1, a1, label = Variable(q1), Variable(a1), Variable(label)
 
     mem_size = q1.size()[1]
     b_size = q1.size()[0]
@@ -145,7 +146,7 @@ def evaluate(data, use_mask = True, print_out = False):
 
     # calculate word importance
     criterion = nn.CrossEntropyLoss()
-    loss = criterion(matching.float(), label.float())
+    loss_eval = criterion(matching.float(), label.long())
 
     q_weights = q_weights.data
     matching = matching.data
@@ -154,7 +155,7 @@ def evaluate(data, use_mask = True, print_out = False):
     ############################
     # predict relevancy
     ############################
-    pred_score, pred_class = torch.max(matching).cpu() # [B], [B]
+    pred_score, pred_class = torch.max(matching.cpu(), 1) # [B], [B]
     label = torch.tensor(label, dtype=torch.int64).cpu() # [B]
     comp = (pred_class == label) # [B]
 
@@ -170,9 +171,9 @@ def evaluate(data, use_mask = True, print_out = False):
     #     iflag = False
     correct  = comp.sum() # scalar
 
-    precision = metrics.precision_score(label.numpy(), pred_class.numpy(), average=None)
-    recall = metrics.recall_score(label.numpy(), pred_class.numpy(), average=None)
-    f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), average=None)
+    precision = metrics.precision_score(label.numpy(), pred_class.numpy(), average='macro')
+    recall = metrics.recall_score(label.numpy(), pred_class.numpy(), average='macro')
+    f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), average='macro')
 
     # write incorrect examples to txt
     negative_examples = ''
@@ -271,7 +272,7 @@ if __name__ == "__main__":
                                      split='train', emd_dim=args.fp_word_embd_dim)
 
         dset_val   = BatchDataLoader(fpath = args.fp_val, embd_dict = pre_embd,
-                                    split='val', emd_dim=args.fp_word_embd_dim)
+                                    split='dev', emd_dim=args.fp_word_embd_dim)
 
     if enable_sampler == True:
         sampler = defineSampler(args.fp_train, neg_sampling_ratio = args.neg_sampling_ratio) # helps with imbalanced classes
