@@ -13,7 +13,7 @@ parser.add_argument('--gpu', type=str, default='0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,
 parser.add_argument('--cp',  default=False, action='store_true')
 parser.add_argument('--fp_train', default='./data/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli_data.json')
-parser.add_argument('--fp_embd',  default='./data/wiki.en.bin')
+parser.add_argument('--fp_embd',  default='./data/cc.en.300.bin')
 parser.add_argument('--n_epochs', default=100, type=int)
 # test data
 # parser.add_argument('--ftest', default='hho_RT_new_splits.json')
@@ -48,7 +48,7 @@ def convert_dictTotext(input_param):
     return cmd
 
 root_folder_data = '/home/ubuntu/projects/KNLI/'
-root_folder_ck   = '/home/ubuntu/projects/KNLI/check_points/'
+root_folder_ck   = '/home/ubuntu/projects/KNLI/'
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -112,7 +112,7 @@ if __name__ == "__main__":
 
         drop = str(opt['droprate']-int(opt['droprate']))[1:][1]
         cmd = 'CUDA_VISIBLE_DEVICES=%d ' % (g, )
-        cmd = cmd + 'nohup python -u train_q2a.py' + ' '
+        cmd = cmd + 'nohup python -u train.py' + ' '
 
         cmd = cmd + '' + convert_dictTotext(opt)
         if 'num_layers' in opt:

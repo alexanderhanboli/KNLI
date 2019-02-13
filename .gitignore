@@ -107,3 +107,4 @@ venv.bak/
 data/
 results/
 check_points/
+logs/
