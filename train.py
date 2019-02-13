@@ -18,24 +18,23 @@ from misc.torch_utility import get_state, load_model_states
 from misc.data_loader import BatchDataLoader
 
 import sys
-sys.path.append('/home/ec2-user/anaconda3/lib/python'+str(sys.version[:3])+'/site-packages')
 from sklearn import metrics
+import nltk
 
 parser = argparse.ArgumentParser()
 # Input data
 parser.add_argument('--fp_train', default='./data/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli_data.json')
 parser.add_argument('--fp_embd',  default='./data/wiki.en.bin')
-
 parser.add_argument('--fp_word_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_context',  default='')
 parser.add_argument('--fp_embd_type',  default='generic')
-parser.add_argument('--bert_embd', default=False, type=bool)
+parser.add_argument('--bert_embd', default=False, action='store_true')
 parser.add_argument('--bert_layers', default=10, type=int)
 
 # Module optim options
-parser.add_argument('--batch_size', default=400, type=int)
+parser.add_argument('--batch_size', default=32, type=int)
 parser.add_argument('--weight_decay', default=0.001, type=float)
 parser.add_argument('--beta1', default=0.5, type=float)
 parser.add_argument('--beta2', default=0.999, type=float)
@@ -44,31 +43,32 @@ parser.add_argument('--beta2', default=0.999, type=float)
 parser.add_argument('--droprate', type=float, default=0.1)
 parser.add_argument('--hidden_size', type=int, default=512)
 parser.add_argument('--num_layers', type=int, default=4)
-parser.add_argument('--heads', type=int, default=4)
+parser.add_argument('--num_layers_cross', type=int, default=4)
+parser.add_argument('--heads', type=int, default=5)
 
 #others
 parser.add_argument('--loader_num_workers', type=int, default=5)
 parser.add_argument('--print_every', type=int, default=200)
 parser.add_argument('--val_interval', type=int, default=1)
-parser.add_argument('--n_epochs', default=20, type=int)
+parser.add_argument('--n_epochs', default=50, type=int)
 parser.add_argument('--check_point_dir', default='./check_points/')
 parser.add_argument('--log_id', default='dummy123')
-parser.add_argument('--checkpoint_every', default=1, type=int)
-parser.add_argument('--seed_random', default=822, type=int)
+parser.add_argument('--checkpoint_every', default=10, type=int)
+parser.add_argument('--seed_random', default=1019, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
-parser.add_argument('--model_name', default='Qkeywords-easy')
-parser.add_argument('--load_model', default=False, type=bool)
+parser.add_argument('--model_name', default='QAembd')
+parser.add_argument('--load_model', default=False, action='store_true')
 
 #
 # parser.add_argument('--rule_based', default=False, type=bool)
-# parser.add_argument('--sharpening', default=True, type=bool)
-# parser.add_argument('--weight_thrd', default=0.10, type=float) # threshold for selection
+parser.add_argument('--sharpening', default=False, action='store_true')
+parser.add_argument('--weight_thrd', default=0.00, type=float) # threshold for selection
 # parser.add_argument('--sim_thrd', default=0.80, type=float) # threshold for similarity
 parser.add_argument('--neg_sampling_ratio', default=1, type=float) # sampling ration: 1 means 50-50, 1< means less negative example, 0 means no negative example
-parser.add_argument('--alpha', default=0.25, type=float)
+parser.add_argument('--alpha', default=0.00, type=float)
 
 #
-parser.add_argument('--debug', default=False, type=bool)
+parser.add_argument('--debug', default=False, action='store_true')
 
 # help functions
 def Variable(data, *args, **kwargs):
@@ -106,9 +106,9 @@ def train(data, use_mask = True):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _ = model(q1, a1, qmask, amask, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, qmask, amask, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
     else:
-        matching, _ = model(q1, a1, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
 
     # calculate loss
     criterion = nn.CrossEntropyLoss()
@@ -140,15 +140,16 @@ def evaluate(data, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, q_weights = model(q1, a1, qmask, amask, alpha=args.alpha) # [B, 3]
+        matching, q_weights, q_cossim = model(q1, a1, qmask, amask, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
     else:
-        matching, q_weights = model(q1, a1, alpha=args.alpha) # [B, 3]
+        matching, q_weights, q_cossim = model(q1, a1, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
 
     # calculate word importance
     criterion = nn.CrossEntropyLoss()
     loss_eval = criterion(matching.float(), label.long())
 
     q_weights = q_weights.data
+    # q_cossim = q_cossim.data
     matching = matching.data
     label = label.data
 
@@ -159,17 +160,17 @@ def evaluate(data, use_mask = True, print_out = False):
     label = torch.tensor(label, dtype=torch.int64).cpu() # [B]
     comp = (pred_class == label) # [B]
 
-    # if comp.sum() > 0:
-    #     correct_idx = comp.nonzero().squeeze(1).numpy()
-    #     cflag = True
-    # else:
-    #     cflag = False
-    # if (1-comp).sum() > 0:
-    #     incorrect_idx = (1-comp).nonzero().squeeze(1).numpy()
-    #     iflag = True
-    # else:
-    #     iflag = False
-    correct  = comp.sum() # scalar
+    if comp.sum() > 0:
+        correct_idx = comp.nonzero().squeeze(1).numpy()
+        cflag = True
+    else:
+        cflag = False
+    if (1-comp).sum() > 0:
+        incorrect_idx = (1-comp).nonzero().squeeze(1).numpy()
+        iflag = True
+    else:
+        iflag = False
+    correct  = comp.sum().data.item() # scalar
 
     precision = metrics.precision_score(label.numpy(), pred_class.numpy(), average='macro')
     recall = metrics.recall_score(label.numpy(), pred_class.numpy(), average='macro')
@@ -177,48 +178,48 @@ def evaluate(data, use_mask = True, print_out = False):
 
     # write incorrect examples to txt
     negative_examples = ''
-    # q_kept = (q_weights > 0).cpu().numpy().astype(int)
+    q_kept = (q_weights > 0).cpu().numpy().astype(int)
     q_weights = q_weights.cpu().numpy()
     # q_cossim = q_cossim.cpu().numpy()
 
     # print out some examples to console
     if print_out:
-    #     # correct examples
-    #     if cflag:
-    #         ce = correct_idx[0]
-    #         q_idx = list(q_kept[ce])
-    #         q_word2match = list(compress(query[ce].split(' '), q_idx))
-    #         print("\rCorrect:")
-    #         print(
-    #             "\rquery: {}\nweights: {}\nwords to match: {}\nsimilarity: {}\nanswer: {}\nmatch score: {}, relevent: {}, pred_relevent: {}\n".format(
-    #             query[ce], q_weights[ce][q_weights[ce] > 0], q_word2match, q_cossim[ce][q_weights[ce] > 0],
-    #             answer[ce],
-    #                                 matching.cpu().numpy()[ce],
-    #                                 relevent.numpy()[ce],
-    #                                 pred_relevent.numpy()[ce]))
-    #
-    #     # incorrect examples
-    #     if iflag:
-    #         ie = incorrect_idx[0]
-    #         q_idx = list(q_kept[ie])
-    #         q_word2match = list(compress(query[ie].split(' '), q_idx))
-    #         print("\rIncorrect:")
-    #         print(
-    #             "\rquery: {}\nweights: {}\nwords to match: {}\nsimilarity: {}\nanswer: {}\nmatch score: {}, relevent: {}, pred_relevent: {}\n".format(
-    #             query[ie], q_weights[ie][q_weights[ie] > 0], q_word2match, q_cossim[ie][q_weights[ie] > 0],
-    #             answer[ie],
-    #                                 matching.cpu().numpy()[ie],
-    #                                 relevent.numpy()[ie],
-    #                                 pred_relevent.numpy()[ie]))
+        # correct examples
+        if cflag:
+            ce = correct_idx[0]
+            q_idx = list(q_kept[ce])
+            q_word2match = list(compress(nltk.word_tokenize(premise[ce]), q_idx))
+            print("\rCorrect:")
+            print(
+                "\rpremise: {}\nweights: {}\nwords to match: {}\nhypothesis: {}\nmatch score: {}, class: {}, pred_class: {}\n".format(
+                premise[ce], q_weights[ce][q_weights[ce] > 0], q_word2match,
+                hypothesis[ce],
+                                    pred_score.cpu().numpy()[ce],
+                                    label.numpy()[ce],
+                                    pred_class.numpy()[ce]))
+
+        # incorrect examples
+        if iflag:
+            ie = incorrect_idx[0]
+            q_idx = list(q_kept[ie])
+            q_word2match = list(compress(nltk.word_tokenize(premise[ie]), q_idx))
+            print("\rIncorrect:")
+            print(
+                "\rpremise: {}\nweights: {}\nwords to match: {}\nhypothesis: {}\nmatch score: {}, class: {}, pred_class: {}\n".format(
+                premise[ie], q_weights[ie][q_weights[ie] > 0], q_word2match,
+                hypothesis[ie],
+                                    pred_score.cpu().numpy()[ie],
+                                    label.numpy()[ie],
+                                    pred_class.numpy()[ie]))
 
         stats
-        print("\rf1 is {}, precision is {}, recall is {}, correct ratio is {}".format(f1, precision, recall, 1.0*correct/len(label)))
+        print("\rf1 is {}, precision is {}, recall is {}, accuracy is {}".format(f1, precision, recall, 1.0*correct/len(label)))
         print('\r-----------------------------------------------------------\n')
 
     # not critical, but just in case
     del q1, a1, premise, hypothesis, label
 
-    return loss_eval.data.item(), correct.data.item(), f1, precision, recall, negative_examples
+    return loss_eval.data.item(), correct, f1, precision, recall, negative_examples
 
 
 if __name__ == "__main__":
@@ -293,11 +294,34 @@ if __name__ == "__main__":
     ############################
     # Build model and optimizer
     ############################
-    import models.Qkeywords as net
-    model = net.Qkeywords(hidden_size = args.hidden_size, drop_rate = args.droprate,
-                     num_layers = args.num_layers,
-                     heads = args.heads, embd_dim=args.fp_embd_dim,
-                     word_embd_dim=args.fp_word_embd_dim)
+    if args.model_name == 'Qkeywords':
+        import models.Qkeywords as net
+        model = net.Qkeywords(hidden_size = args.hidden_size, drop_rate = args.droprate,
+                         num_layers = args.num_layers,
+                         heads = args.heads, embd_dim=args.fp_embd_dim,
+                         word_embd_dim=args.fp_word_embd_dim)
+
+    elif args.model_name == 'QattendA':
+        import models.QattendA as net
+        model = net.QatA(hidden_size = args.hidden_size, drop_rate = args.droprate,
+                         num_layers = args.num_layers,
+                         num_layers_cross = args.num_layers_cross,
+                         heads = args.heads, embd_dim=args.fp_embd_dim,
+                         word_embd_dim=args.fp_word_embd_dim)
+
+    elif args.model_name == 'QAembd':
+        import models.QAembd as net
+        model = net.QAembd(hidden_size = args.hidden_size, drop_rate = args.droprate,
+                         num_layers = args.num_layers,
+                         num_layers_cross = args.num_layers_cross,
+                         heads = args.heads, embd_dim=args.fp_embd_dim,
+                         word_embd_dim=args.fp_word_embd_dim)
+
+    # initialize weights as the same in Transformer paper: Glorot / fan_avg
+    # print("Initializing weights ...")
+    # for p in filter(lambda p: p.requires_grad, model.parameters()):
+    #     if p.dim() > 1:
+    #         nn.init.xavier_uniform_(p)
 
     #########################
     # Check whether there is
@@ -318,7 +342,7 @@ if __name__ == "__main__":
     ########################
     optimizer_adam = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
                            betas=(args.beta1, args.beta2), eps=1e-9, weight_decay = args.weight_decay)
-    optimizer = net.NoamOpt(args.fp_embd_dim, 2, 9000, optimizer_adam)
+    optimizer = net.NoamOpt(args.fp_embd_dim, 1.8, 5000, optimizer_adam)
     # optimizer = net.AdamDecay(args.learning_rate, 0.9**(1.0/10000), optimizer_adam)
 
     # if there is GPU, make them cuda

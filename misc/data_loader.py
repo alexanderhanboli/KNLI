@@ -28,7 +28,7 @@ class BatchDataLoader(Dataset):
      This data loader loads data.
      This supports any batch size.
     '''
-    def __init__(self, fpath='', embd_dict=None, split='', max_q_len = 10, max_ans_len = 10, emd_dim = 300):
+    def __init__(self, fpath='', embd_dict=None, split='', max_q_len = 26, max_ans_len = 14, emd_dim = 300):
 
         self.embd_dict = embd_dict
         self.emd_dim = emd_dim
@@ -40,7 +40,7 @@ class BatchDataLoader(Dataset):
         self.data = everything[split]
         self.max_q_len = max_q_len
         self.max_ans_len = max_ans_len
-        
+
         self.class_dict = {'entailment':0, 'neutral':1, 'contradiction':2}
 
         print("Done with loading data for %s split containing " % (self.split))
@@ -61,7 +61,7 @@ class BatchDataLoader(Dataset):
         # embedding vectors
         vecQ1 = np.zeros((self.max_q_len, self.emd_dim), dtype = np.float32)
         vecQ2 = np.zeros((self.max_ans_len, self.emd_dim), dtype = np.float32)
-    
+
         # process query (premise)
         for i, widx in enumerate(query):
             if i >= self.max_q_len:

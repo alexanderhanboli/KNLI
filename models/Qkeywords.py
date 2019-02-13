@@ -73,7 +73,7 @@ def attention(query, key, value, mask=None, dropout=None):
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) \
              / math.sqrt(d_k) # [B, H, T1, T2]
-    if mask is not None:
+    if mask is not None: # mask: [B, 1, 1, T2]
         scores = scores.masked_fill(mask == 0, -1e9)
     p_attn = F.softmax(scores, dim = -1) # [B, H, T1, T2]
 
@@ -149,8 +149,8 @@ class MultiHeadedAttn(nn.Module):
             D: is model dimension
         '''
         if mask is not None:
-            d = mask.size()[1]
-            mask = mask.repeat(1, d).view(-1, d, d).unsqueeze(1) # [B, 1, T, T]
+            mask = mask.unsqueeze(1) # [B, 1, T]
+            mask = mask.unsqueeze(1) # [B, 1, 1, T]
 
         batch_size = query.size(0)
 
@@ -210,8 +210,8 @@ class SimAttn(nn.Module):
             D: is model dimension
         '''
         if mask is not None:
-            d = mask.size()[1]
-            mask = mask.repeat(1, d).view(-1, d, d).unsqueeze(1) # [B, 1, T, T]
+            mask = mask.unsqueeze(1) # [B, 1, T]
+            mask = mask.unsqueeze(1) # [B, 1, 1, T]
 
         batch_size = query.size(0)
 
@@ -421,6 +421,7 @@ class Qkeywords(nn.Module):
             Need to make sure that embd_dim % heads == 0.
         '''
         super(Qkeywords, self).__init__()
+        c = copy.deepcopy
         if word_embd_dim == None:
             word_embd_dim = embd_dim
         self.word_embd_dim = word_embd_dim
@@ -433,26 +434,22 @@ class Qkeywords(nn.Module):
         # layers
         self.highway = Highway(h_size=word_embd_dim, h_out=embd_dim, num_layers=2)
 
-        layer_self_attn_q = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
-        layer_cross_attn_q = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
-        layer_self_attn_a = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
-        # layer_cross_attn_a = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
+        attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
 
-        layer_feed_forward_q = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
-        layer_feed_forward_a = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
+        ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
 
-        self.encoder_q = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=layer_self_attn_q,
-                                                feed_forward=layer_feed_forward_q, dropout=drop_rate), N=num_layers)
+        self.encoder_q = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
+                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers)
 
         self.coattention = SimAttn(heads=1, d_model=embd_dim, dropout=0.0)
 
         self.fc_q = nn.Sequential(
-            nn.Linear(embd_dim, embd_dim),
-            nn.LeakyReLU(0.02),
-            LayerNorm(embd_dim),
-            nn.Linear(embd_dim, 3),
+            nn.Linear(embd_dim, hidden_size),
+            nn.ReLU(),
+            nn.Dropout(drop_rate),
+            nn.Linear(hidden_size, 3),
         )
 
         self.sim = Sim(embd_dim=embd_dim, hidden_size=hidden_size)
@@ -491,7 +488,7 @@ class Qkeywords(nn.Module):
         ###
         # Step: Final linear layer
         ####
-        q_uweight = self.fc_q(question).squeeze(-1) # [B, T, 3]
+        q_uweight = self.fc_q(question) # [B, T, 3]
 
         if qmask is not None:
             q_weight = F.softmax(q_uweight.masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 3]
@@ -500,4 +497,4 @@ class Qkeywords(nn.Module):
 
         score = torch.sum(q_weight.mul(q_cossim), dim=1).clamp(0, 1).squeeze(1) # [B, 3]
 
-        return score, q_weight
+        return score, q_weight, q_cossim
