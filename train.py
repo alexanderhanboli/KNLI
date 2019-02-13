@@ -20,6 +20,7 @@ from misc.data_loader import BatchDataLoader
 import sys
 from sklearn import metrics
 import nltk
+nltk.download('punkt')
 
 parser = argparse.ArgumentParser()
 # Input data
