@@ -6,7 +6,7 @@ import torch.optim as optim
 import torch.autograd as autograd
 import torch.nn.functional as F
 import numpy as np
-import os
+import os, io
 import time
 import math
 import argparse
@@ -16,6 +16,7 @@ from collections import OrderedDict
 from misc.utilities import initialize_weights, timeSince, dump_to_json, create_dir, Preload_embedding, read_json_file
 from misc.torch_utility import get_state, load_model_states
 from misc.data_loader import BatchDataLoader
+from misc.opt import OpenAIAdam
 
 import sys
 from sklearn import metrics
@@ -35,21 +36,28 @@ parser.add_argument('--bert_embd', default=False, action='store_true')
 parser.add_argument('--bert_layers', default=10, type=int)
 
 # Module optim options
-parser.add_argument('--batch_size', default=32, type=int)
-parser.add_argument('--weight_decay', default=0.001, type=float)
-parser.add_argument('--beta1', default=0.5, type=float)
+parser.add_argument('--opt', default='original', type=str, choices=['original', 'openai'])
+parser.add_argument('--batch_size', default=8, type=int)
+parser.add_argument('--beta1', default=0.9, type=float)
 parser.add_argument('--beta2', default=0.999, type=float)
+parser.add_argument('--lr', type=float, default=6.25e-5)
+parser.add_argument('--lr_warmup', type=float, default=0.002)
+parser.add_argument('--l2', type=float, default=0.01)
+parser.add_argument('--vector_l2', action='store_true')
+parser.add_argument('--lr_schedule', type=str, default='warmup_linear')
+parser.add_argument('--e', type=float, default=1e-8)
+parser.add_argument('--max_grad_norm', type=int, default=1)
 
 # Model params
 parser.add_argument('--droprate', type=float, default=0.1)
 parser.add_argument('--hidden_size', type=int, default=512)
-parser.add_argument('--num_layers', type=int, default=4)
-parser.add_argument('--num_layers_cross', type=int, default=4)
+parser.add_argument('--num_layers', type=int, default=1)
+parser.add_argument('--num_layers_cross', type=int, default=1)
 parser.add_argument('--heads', type=int, default=5)
 
 #others
 parser.add_argument('--loader_num_workers', type=int, default=5)
-parser.add_argument('--print_every', type=int, default=200)
+parser.add_argument('--print_every', type=int, default=1000)
 parser.add_argument('--val_interval', type=int, default=1)
 parser.add_argument('--n_epochs', default=50, type=int)
 parser.add_argument('--check_point_dir', default='./check_points/')
@@ -88,6 +96,14 @@ def createFileName(args):
                         '_B' + str(args.batch_size) + '_L' + str(args.num_layers) +
                         '_H' + str(args.heads) + '_D' + str(args.droprate-int(args.droprate))[1:][1])
 
+def load_vectors(fname):
+    fin = io.open(fname, 'r', encoding='utf-8', newline='\n', errors='ignore')
+    data = {}
+    for line in fin:
+        tokens = line.rstrip().split(' ')
+        data[tokens[0]] = np.array(list(map(float, tokens[1:])))
+    return data
+
 # train step
 def train(data, use_mask = True):
     '''
@@ -100,7 +116,10 @@ def train(data, use_mask = True):
     q1, a1, label = Variable(q1), Variable(a1), Variable(label)
 
     # setup the optim
-    optimizer.optimizer.zero_grad()
+    if args.opt == 'original':
+        optimizer.optimizer.zero_grad()
+    elif args.opt == 'openai':
+        optimizer.zero_grad()
     loss = 0.0
 
     # feed data through the model
@@ -141,16 +160,14 @@ def evaluate(data, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, q_weights, q_cossim = model(q1, a1, qmask, amask, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, qmask, amask, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
     else:
-        matching, q_weights, q_cossim = model(q1, a1, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
 
     # calculate word importance
     criterion = nn.CrossEntropyLoss()
     loss_eval = criterion(matching.float(), label.long())
 
-    q_weights = q_weights.data
-    # q_cossim = q_cossim.data
     matching = matching.data
     label = label.data
 
@@ -159,67 +176,22 @@ def evaluate(data, use_mask = True, print_out = False):
     ############################
     pred_score, pred_class = torch.max(matching.cpu(), 1) # [B], [B]
     label = torch.tensor(label, dtype=torch.int64).cpu() # [B]
+
     comp = (pred_class == label) # [B]
-
-    if comp.sum() > 0:
-        correct_idx = comp.nonzero().squeeze(1).numpy()
-        cflag = True
-    else:
-        cflag = False
-    if (1-comp).sum() > 0:
-        incorrect_idx = (1-comp).nonzero().squeeze(1).numpy()
-        iflag = True
-    else:
-        iflag = False
     correct  = comp.sum().data.item() # scalar
-
     precision = metrics.precision_score(label.numpy(), pred_class.numpy(), average='macro')
     recall = metrics.recall_score(label.numpy(), pred_class.numpy(), average='macro')
     f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), average='macro')
 
-    # write incorrect examples to txt
-    negative_examples = ''
-    q_kept = (q_weights > 0).cpu().numpy().astype(int)
-    q_weights = q_weights.cpu().numpy()
-    # q_cossim = q_cossim.cpu().numpy()
-
     # print out some examples to console
     if print_out:
-        # correct examples
-        if cflag:
-            ce = correct_idx[0]
-            q_idx = list(q_kept[ce])
-            q_word2match = list(compress(nltk.word_tokenize(premise[ce]), q_idx))
-            print("\rCorrect:")
-            print(
-                "\rpremise: {}\nweights: {}\nwords to match: {}\nhypothesis: {}\nmatch score: {}, class: {}, pred_class: {}\n".format(
-                premise[ce], q_weights[ce][q_weights[ce] > 0], q_word2match,
-                hypothesis[ce],
-                                    pred_score.cpu().numpy()[ce],
-                                    label.numpy()[ce],
-                                    pred_class.numpy()[ce]))
-
-        # incorrect examples
-        if iflag:
-            ie = incorrect_idx[0]
-            q_idx = list(q_kept[ie])
-            q_word2match = list(compress(nltk.word_tokenize(premise[ie]), q_idx))
-            print("\rIncorrect:")
-            print(
-                "\rpremise: {}\nweights: {}\nwords to match: {}\nhypothesis: {}\nmatch score: {}, class: {}, pred_class: {}\n".format(
-                premise[ie], q_weights[ie][q_weights[ie] > 0], q_word2match,
-                hypothesis[ie],
-                                    pred_score.cpu().numpy()[ie],
-                                    label.numpy()[ie],
-                                    pred_class.numpy()[ie]))
-
         print("\rf1 is {}, precision is {}, recall is {}, accuracy is {}".format(f1, precision, recall, 1.0*correct/len(label)))
         print('\r-----------------------------------------------------------\n')
 
     # not critical, but just in case
     del q1, a1, premise, hypothesis, label
 
-    return loss_eval.data.item(), correct, f1, precision, recall, negative_examples
+    return loss_eval.data.item(), correct, f1, precision, recall, b_size
 
 
 if __name__ == "__main__":
@@ -267,7 +239,10 @@ if __name__ == "__main__":
         dset_val   = BatchDataLoaderBert(fpath = args.fp_val, split='val',
                                     emd_dim=args.fp_word_embd_dim, num_bert_layers=args.bert_layers)
     else:
-        pre_embd = Preload_embedding(args.fp_embd, args.fp_embd_context, args.fp_embd_type)
+        if args.fp_embd.split('.')[-1] == 'bin':
+            pre_embd = Preload_embedding(args.fp_embd, args.fp_embd_context, args.fp_embd_type)
+        else:
+            pre_embd = load_vectors(args.fp_embd)
 
         dset_train = BatchDataLoader(fpath = args.fp_train, embd_dict = pre_embd,
                                      split='train', emd_dim=args.fp_word_embd_dim)
@@ -325,11 +300,19 @@ if __name__ == "__main__":
                          heads = args.heads, embd_dim=args.fp_embd_dim,
                          word_embd_dim=args.fp_word_embd_dim)
 
+    elif args.model_name == 'QAesim':
+        import models.QAesim as net
+        model = net.QAesim(hidden_size = args.hidden_size, drop_rate = args.droprate,
+                         num_layers = args.num_layers,
+                         num_layers_cross = args.num_layers_cross,
+                         heads = args.heads, embd_dim=args.fp_embd_dim,
+                         word_embd_dim=args.fp_word_embd_dim)
+
     # initialize weights as the same in Transformer paper: Glorot / fan_avg
-    print("Initializing weights ...")
-    for p in filter(lambda p: p.requires_grad, model.parameters()):
-        if p.dim() > 1:
-            nn.init.xavier_uniform_(p)
+    # print("Initializing weights ...")
+    # for p in filter(lambda p: p.requires_grad, model.parameters()):
+    #     if p.dim() > 1:
+    #         nn.init.xavier_uniform_(p)
 
     #########################
     # Check whether there is
@@ -348,10 +331,24 @@ if __name__ == "__main__":
     #########################
     # Add loss function and other configs
     ########################
-    optimizer_adam = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
-                           betas=(args.beta1, args.beta2), eps=1e-9, weight_decay = args.weight_decay)
-    optimizer = net.NoamOpt(args.fp_embd_dim, 1.8, 5000, optimizer_adam)
-    # optimizer = net.AdamDecay(args.learning_rate, 0.9**(1.0/10000), optimizer_adam)
+    if args.opt == 'original':
+        optimizer_adam = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
+                               betas=(args.beta1, args.beta2), eps=args.e, weight_decay = args.l2)
+        optimizer = net.NoamOpt(args.fp_embd_dim, 2, 5000, optimizer_adam)
+        # optimizer = net.AdamDecay(args.learning_rate, 0.9**(1.0/10000), optimizer_adam)
+    elif args.opt == 'openai':
+        n_updates_total = len(train_loader) * args.n_epochs
+        optimizer = OpenAIAdam(filter(lambda p: p.requires_grad, model.parameters()),
+                               lr=args.lr,
+                               schedule=args.lr_schedule,
+                               warmup=args.lr_warmup,
+                               t_total=n_updates_total,
+                               b1=args.beta1,
+                               b2=args.beta2,
+                               e=args.e,
+                               l2=args.l2,
+                               vector_l2=args.vector_l2,
+                               max_grad_norm=args.max_grad_norm)
 
     # if there is GPU, make them cuda
     if USE_CUDA:
@@ -392,7 +389,6 @@ if __name__ == "__main__":
             'best_val_loss': -1, 'best_ts':0, 'best_val_accuracy': -1, 'best_val_f1': -1,
             'best_precision':-1, 'best_recall':-1
             }
-    negative_examples = ''
     time_step = 0
     for epoch in range(1, args.n_epochs + 1):
 
@@ -422,7 +418,6 @@ if __name__ == "__main__":
 
         epc_loss = epc_loss/len(train_loader)
         stats['train_losses_epc'].append(epc_loss)
-        print('Current training rate {}\n'.format(optimizer._rate))
         print('Train EPC_loss %.4f\n' % (epc_loss))
 
         if epoch % args.val_interval == 0:
@@ -432,6 +427,7 @@ if __name__ == "__main__":
             val_f1 = 0.0
             val_precision = 0.0
             val_recall = 0.0
+            total_data = 0
             for j, data_val in enumerate(val_loader, 0):
 
                 print_out = False
@@ -443,12 +439,12 @@ if __name__ == "__main__":
                 val_f1 += val_loss_correct[2]
                 val_precision += val_loss_correct[3]
                 val_recall +=val_loss_correct[4]
-                negative_examples += val_loss_correct[5]
+                total_data += val_loss_correct[5]
 
             val_f1 = val_f1 / len(val_loader)
             val_precision = val_precision / len(val_loader)
             val_recall = val_recall / len(val_loader)
-            val_correct = val_correct / (len(val_loader)*args.batch_size)
+            val_correct = val_correct / total_data
             stats['val_losses'].append(val_loss)
             stats['val_losses_ts'].append(epoch)
             stats['val_f1'].append(val_f1)
@@ -456,7 +452,7 @@ if __name__ == "__main__":
             stats['val_recall'].append(val_recall)
             stats['val_acc'].append(val_correct)
 
-        if val_f1 > best_val_f1:
+        if val_correct > best_val_acc:
                 best_val_f1 = val_f1
                 best_val_acc = val_correct
                 best_val_precision = val_precision
@@ -522,10 +518,3 @@ if __name__ == "__main__":
 
     if USE_CUDA:
         torch.cuda.empty_cache()
-
-    # file_dir = '/home/ec2-user/outputs'
-    # if not os.path.exists(file_dir):
-    #     os.makedirs(file_dir)
-    # with open("/home/ec2-user/outputs/negative_examples.txt", "w+") as text_file:
-    #     print("Printing negative examples...\n")
-    #     print(negative_examples, file=text_file)

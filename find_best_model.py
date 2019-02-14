@@ -47,7 +47,7 @@ def find_best_model(check_point_dir, finput):
   best_precision = -1
   for i in finput:
     vals = read_json_file(os.path.join(check_point_dir,i))
-    curr_v = vals['best_val_f1']
+    curr_v = vals['best_val_accuracy']
     if curr_v > best_val:
           best_val = curr_v
           best_args = vals['args']
@@ -173,12 +173,12 @@ if __name__ == "__main__":
     cp_list = []
 
     for gid, model in enumerate(list_models.keys()):
-        pre, recall, f1, bargs ,ptf = find_best_model(args.check_point_dir, list_models[model])
-        print(" %s ==> precison: %.4f, recall: %.4f, f1: %.4f, file %s" %(model, pre, recall, f1, ptf))
+        pre, recall, acc, bargs ,ptf = find_best_model(args.check_point_dir, list_models[model])
+        print(" %s ==> precison: %.4f, recall: %.4f, accuracy: %.4f, file %s" %(model, pre, recall, acc, ptf))
         print("-----------------------------------")
         print(" the best args are: {}".format(bargs))
         gcmd = 'CUDA_VISIBLE_DEVICES=%d  ' % (gid, )
-        command = "python -u test.py --fp_test " + args.ftest + " --best_model "+ ptf  + " --split test --batch_size 450"
+        command = "python -u test.py --fp_test " + args.ftest + " --best_model "+ ptf  + " --split test --batch_size 16"
         print(gcmd + command)
         print("-----------------------------------")
         cp_list.append(ptf)

@@ -28,7 +28,7 @@ class BatchDataLoader(Dataset):
      This data loader loads data.
      This supports any batch size.
     '''
-    def __init__(self, fpath='', embd_dict=None, split='', max_q_len = 26, max_ans_len = 14, emd_dim = 300):
+    def __init__(self, fpath='', embd_dict=None, split='', max_q_len = 82, max_ans_len = 44, emd_dim = 300):
 
         self.embd_dict = embd_dict
         self.emd_dim = emd_dim

@@ -8,13 +8,13 @@ import argparse
 
 parser = argparse.ArgumentParser()
 # params
-parser.add_argument('--model_name', default='QAembd')
-parser.add_argument('--gpu', type=str, default='0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15', help='used gpu')
+parser.add_argument('--model_name', default='QAesim')
+parser.add_argument('--gpu', type=str, default='0,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15', help='used gpu')
 parser.add_argument('--cp',  default=False, action='store_true')
 parser.add_argument('--fp_train', default='./data/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli_data.json')
-parser.add_argument('--fp_embd',  default='./data/cc.en.300.bin')
-parser.add_argument('--n_epochs', default=100, type=int)
+parser.add_argument('--fp_embd',  default='./data/wiki.en.bin')
+parser.add_argument('--n_epochs', default=500, type=int)
 # test data
 # parser.add_argument('--ftest', default='hho_RT_new_splits.json')
 
@@ -80,10 +80,11 @@ if __name__ == "__main__":
 
         random_id = str(randrange(10)) + str(int(time.time()))[-6:] # just returns 6 numbers
 
-        opt['weight_decay']  = choice([0.01])
+        opt['l2']  = choice([0.01, 0.0001])
+        opt['opt'] = choice(['original', 'openai'])
         # opt['learning_rate'] = choice([10**uniform(-3.8,-2.5), 0.001])
         opt['hidden_size']  = choice([512])
-        opt['heads'] = choice([4, 5, 6]) # divisible for 300
+        opt['heads'] = choice([4, 6, 10]) # divisible for 300
         # opt['char_embd_dim']  =   randrange(64, 256, 2)
         # opt['num_filters']    =   choice([64, 100, 128])
         # ngram_sizes = choice([ [1], [1,2], [1,2,3], [1,2,3,4], [1,2,3,4,5]])
@@ -91,7 +92,7 @@ if __name__ == "__main__":
         opt['droprate'] =  choice([0.10])
         # opt['entp_beta'] = choice([0.1, 0.2, 0.3, 0.4])
         opt['num_layers'] = choice([1, 2, 4, 6])
-        opt['num_layers_cross'] = choice([1, 2, 4, 6])
+        opt['num_layers_cross'] = choice([1])
         # opt['sharpening'] = choice([True])
         # opt['rule_based'] = choice([True])
         # opt['sim_thrd'] = choice([0.70, 0.80, 0.90, 0.99])
@@ -99,20 +100,20 @@ if __name__ == "__main__":
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1
         opt['print_every'] = 2000
-        opt['loader_num_workers'] = 3
-        opt['batch_size'] = choice([32, 64])
-        opt['checkpoint_every'] = 10
-        opt['seed_random'] = 12357 #np.random.randint(100, 10000)
+        opt['loader_num_workers'] = 4
+        opt['batch_size'] = choice([8, 16])
+        opt['checkpoint_every'] = 20
+        opt['seed_random'] = 1314 #np.random.randint(100, 10000)
         # opt['lr_decay'] = choice([10**uniform(-1.2,-.01), 1])
         opt['log_id'] = random_id
         #opt['fp_embd_dim'] = 100
         #opt['fp_embd_type'] = 'context'
-        opt['beta1'] = choice([0.5])
+        opt['beta1'] = choice([0.5, 0.9])
         opt['beta2'] = choice([0.999])
 
         drop = str(opt['droprate']-int(opt['droprate']))[1:][1]
         cmd = 'CUDA_VISIBLE_DEVICES=%d ' % (g, )
-        cmd = cmd + 'nohup python -u train.py' + ' '
+        cmd = cmd + 'nohup python -u train_noprint.py' + ' '
 
         cmd = cmd + '' + convert_dictTotext(opt)
         if 'num_layers' in opt:

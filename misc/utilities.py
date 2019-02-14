@@ -8,13 +8,13 @@ import json
 import ntpath
 import numpy as np
 import fastText
+import torch.nn as nn
 
 class Preload_embedding():
 
     def __init__(self, emd_file='data/wiki.en.bin', emb_context_file = '', emb_type ='generic'):
 
-        print("Loading embedding file ...")
-        print("Only supports wiki.en.bin")
+        print("Loading embedding file {}".format(emd_file))
         start = time.clock()
         self.model = fastText.load_model(emd_file)
         if emb_context_file:
@@ -86,3 +86,13 @@ def timeSince(since):
     m = math.floor(s/60)
     s -= m * 60
     return '%dm %ds' % (m, s)
+
+def initialize_weights(model):
+    for p in filter(lambda p: p.requires_grad, model.parameters()):
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+            
+def orthogonal_weights(model):
+    for p in filter(lambda p: p.requires_grad, model.parameters()):
+        if p.dim() > 1:
+            nn.init.orthogonal_(p)
