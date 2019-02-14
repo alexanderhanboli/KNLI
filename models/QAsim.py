@@ -431,7 +431,7 @@ class Sim(nn.Module):
 ##############################
 #### STEM model
 ##############################
-class QAembd(nn.Module):
+class QAsim(nn.Module):
 
     def __init__(self, hidden_size = 512, drop_rate = 0.1,
                  num_layers = 4, num_layers_cross = 2, heads = 4, embd_dim = 300, word_embd_dim = 300):
@@ -440,7 +440,7 @@ class QAembd(nn.Module):
             This model use a simple summation of Fasttext word embeddings to represent each question in the pair.
             Need to make sure that embd_dim % heads == 0.
         '''
-        super(QAembd, self).__init__()
+        super(QAsim, self).__init__()
         c = copy.deepcopy
         if word_embd_dim == None:
             word_embd_dim = embd_dim
@@ -454,25 +454,24 @@ class QAembd(nn.Module):
         # layers
         self.highway = Highway(h_size=word_embd_dim, h_out=embd_dim, num_layers=1)
 
-        attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
-
-        ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
+        self.coattention = SimAttn(heads=1, d_model=embd_dim, dropout=0.0)
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
 
+        self.proj = nn.Sequential(
+            nn.Linear(4*embd_dim, hidden_size),
+            nn.Linear(hidden_size, embd_dim),
+        )
+        attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
+        ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
         self.encoder_q = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers)
-
-        self.encoder_a = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
-                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers)
-
+        # self.encoder_a = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
+        #                                         feed_forward=c(ff), dropout=drop_rate), N=num_layers)
         self.encoder_qa = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
-
-        self.encoder_aq = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
-                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
-
-        # self.coattention = SimAttn(heads=1, d_model=embd_dim, dropout=0.0)
+        # self.encoder_aq = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
+        #                                         feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
 
         self.fc_q = nn.Sequential(
             nn.Linear(embd_dim, hidden_size),
@@ -480,15 +479,15 @@ class QAembd(nn.Module):
             nn.Linear(hidden_size, 1),
         )
 
-        self.fc_a = nn.Sequential(
-            nn.Linear(embd_dim, hidden_size),
-            nn.Dropout(drop_rate),
-            nn.Linear(hidden_size, 1),
-        )
+        # self.fc_a = nn.Sequential(
+        #     nn.Linear(embd_dim, hidden_size),
+        #     nn.Dropout(drop_rate),
+        #     nn.Linear(hidden_size, 1),
+        # )
 
         self.sim = Sim(embd_dim=embd_dim, hidden_size=hidden_size)
 
-    def forward(self, question, answer, qmask=None, amask=None, sharpening=True, thrd=0.10, alpha=0.00):
+    def forward(self, question, answer, qmask=None, amask=None, sharpening=False, thrd=0.10, alpha=0.00):
         '''
          input : batch, seq_len
                 qxlen [qx, lenx]
@@ -504,32 +503,44 @@ class QAembd(nn.Module):
         # Step: apply highway and/or drop to the inputs and positional encoding
         ####
         # question = self.drop(self.highway(question))
-        question = self.highway(question)
-        answer = self.highway(answer) # share weights
+        # question = self.highway(question)
+        # answer = self.highway(answer) # share weights
 
         ####
         # Step: Self attention question and memory
         ####
-
+        # add position information
         question = self.position(question)
         answer = self.position(answer) # add positional encoding
 
         #residual connection + layer norm
-        question_e = self.encoder_q(question, qmask)
-        answer_e = self.encoder_a(answer, amask)
+        question = self.encoder_q(question, qmask)
+        answer = self.encoder_q(answer, amask)
+
+        # alignment (can add external knowledge here)
+        question_align = self.coattention(question, answer, answer, sharpening, amask) # [B, T, D]
+        answer_align = self.coattention(answer, question, question, sharpening, qmask)
+
+        # concatenation (enrichment with the same orientation)
+        question = torch.cat( (question, question_align, question-question_align, question.mul(question_align)), -1 )
+        answer = torch.cat( (answer_align, answer, answer_align-answer, answer_align.mul(answer)), -1 ) # [B, T, 4*D]
+
+        # project to lower dim
+        question = self.proj(question)
+        answer = self.proj(answer)
 
         # cross attention
-        question = self.encoder_qa(question_e, answer_e, qmask, amask) # question: [B, T, D], mask: [B, T]
-        answer = self.encoder_aq(answer_e, question_e, amask, qmask) # question: [B, T, D], mask: [B, T]
+        question_crs = self.encoder_qa(question, answer, qmask, amask) # question: [B, T, D], mask: [B, T]
+        answer_crs = self.encoder_qa(answer, question, amask, qmask) # question: [B, T, D], mask: [B, T]
 
-        q = question # [B, T, D]
-        a = answer
+        question = question_crs # [B, T, D]
+        answer = answer_crs
 
         ###
         # Step: Final linear layer
         ####
         q_uweight = self.fc_q(question) # [B, T, 1]
-        a_uweight = self.fc_a(answer)
+        a_uweight = self.fc_q(answer)
 
         if qmask is not None:
             q_weight = F.softmax(q_uweight.masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 1]
@@ -541,8 +552,8 @@ class QAembd(nn.Module):
         else:
             a_weight = F.softmax(a_uweight, dim=1) # [B, T, 1]
 
-        q_embd = torch.sum( q_weight.mul(q), dim=1 ).squeeze(1) # [B, D]
-        a_embd = torch.sum( a_weight.mul(a), dim=1 ).squeeze(1) # [B, D]
+        q_embd = torch.sum( q_weight.mul(question), dim=1 ).squeeze(1) # [B, D]
+        a_embd = torch.sum( a_weight.mul(answer), dim=1 ).squeeze(1) # [B, D]
 
         score = self.sim(q_embd, a_embd) # [B, 3]
 

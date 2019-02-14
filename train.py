@@ -56,7 +56,7 @@ parser.add_argument('--log_id', default='dummy123')
 parser.add_argument('--checkpoint_every', default=10, type=int)
 parser.add_argument('--seed_random', default=1019, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
-parser.add_argument('--model_name', default='QAembd')
+parser.add_argument('--model_name', default='QAsim')
 parser.add_argument('--load_model', default=False, action='store_true')
 
 #
@@ -317,11 +317,19 @@ if __name__ == "__main__":
                          heads = args.heads, embd_dim=args.fp_embd_dim,
                          word_embd_dim=args.fp_word_embd_dim)
 
+    elif args.model_name == 'QAsim':
+        import models.QAsim as net
+        model = net.QAsim(hidden_size = args.hidden_size, drop_rate = args.droprate,
+                         num_layers = args.num_layers,
+                         num_layers_cross = args.num_layers_cross,
+                         heads = args.heads, embd_dim=args.fp_embd_dim,
+                         word_embd_dim=args.fp_word_embd_dim)
+
     # initialize weights as the same in Transformer paper: Glorot / fan_avg
-    # print("Initializing weights ...")
-    # for p in filter(lambda p: p.requires_grad, model.parameters()):
-    #     if p.dim() > 1:
-    #         nn.init.xavier_uniform_(p)
+    print("Initializing weights ...")
+    for p in filter(lambda p: p.requires_grad, model.parameters()):
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
 
     #########################
     # Check whether there is
