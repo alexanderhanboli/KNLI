@@ -7,6 +7,7 @@ import numpy as np
 import os
 import math, copy, time
 from torch.autograd import Variable
+from misc.utilities import initialize_weights, orthogonal_weights
 
 class NoamOpt:
     "Optim wrapper that implements rate."
@@ -35,33 +36,6 @@ class NoamOpt:
         return self.factor * \
             (self.model_size ** (-self._decay) *
             min(step ** (-self._decay), step * self.warmup ** (-1-self._decay)))
-
-# class NoamOpt: # sine-periodic version
-#     "Optim wrapper that implements rate."
-#     def __init__(self, model_size, factor, warmup, optimizer):
-#         self.optimizer = optimizer
-#         self._step = 0
-#         self.warmup = warmup
-#         self.factor = factor
-#         self.model_size = model_size
-#         self._rate = 0
-#
-#     def step(self):
-#         "Update parameters and rate"
-#         self._step += 1
-#         rate = self.rate()
-#         for p in self.optimizer.param_groups:
-#             p['lr'] = rate
-#         self._rate = rate
-#         self.optimizer.step()
-#
-#     def rate(self, step = None):
-#         "Implement `lrate` above"
-#         if step is None:
-#             step = self._step
-#         return self.factor * \
-#             (self.model_size ** (-0.5) *
-#             min(step ** (-0.5) * (1.0 + np.sin(2 * step / self.warmup) ** 2), step * self.warmup ** (-1.5)))
 
 class AdamDecay:
     "Optim wrapper that implements rate."
@@ -406,24 +380,22 @@ class CrEncoderLayer(nn.Module):
 
         return x
 
-class Sim(nn.Module):
+class Classifier(nn.Module):
     def __init__(self, embd_dim, hidden_size):
 
-        super(Sim, self).__init__()
+        super(Classifier, self).__init__()
 
         self.simf = nn.Sequential(
             nn.Linear(embd_dim * 4, hidden_size),
             nn.Tanh(),
-            # nn.Dropout(0.1),
+            # nn.Dropout(),
             nn.Linear(hidden_size, 3),
         )
 
-    def forward(self, x, y):
+    def forward(self, input):
         '''
         x: [B, T, D]
         '''
-
-        input = torch.cat((x, y, x-y, x.mul(y)), -1) # [B, 4*D]
         score = self.simf(input) # [B, 3]
 
         return score
@@ -458,35 +430,39 @@ class QAsim(nn.Module):
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
 
-        self.proj = nn.Sequential(
-            nn.Linear(4*embd_dim, hidden_size),
-            nn.Linear(hidden_size, embd_dim),
+        self.proj_q = nn.Sequential(
+            nn.Linear(4*embd_dim, embd_dim, bias=False),
+            # nn.ReLU(),
+        )
+        self.proj_a = nn.Sequential(
+            nn.Linear(4*embd_dim, embd_dim, bias=False),
+            # nn.ReLU(),
         )
         attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
         ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
         self.encoder_q = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers)
-        # self.encoder_a = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
-        #                                         feed_forward=c(ff), dropout=drop_rate), N=num_layers)
+        self.encoder_a = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
+                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers)
         self.encoder_qa = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
-        # self.encoder_aq = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
-        #                                         feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
+        self.encoder_aq = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
+                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
 
         self.fc_q = nn.Sequential(
             nn.Linear(embd_dim, hidden_size),
-            nn.Dropout(drop_rate),
+            nn.ReLU(),
             nn.Linear(hidden_size, 1),
         )
+        self.fc_a = c(self.fc_q)
 
-        # self.fc_a = nn.Sequential(
-        #     nn.Linear(embd_dim, hidden_size),
-        #     nn.Dropout(drop_rate),
-        #     nn.Linear(hidden_size, 1),
-        # )
+        self.classifier = Classifier(embd_dim=embd_dim, hidden_size=hidden_size)
 
-        self.sim = Sim(embd_dim=embd_dim, hidden_size=hidden_size)
-
+        # initialize weights
+        self.apply(initialize_weights)
+        self.proj_q.apply(orthogonal_weights)
+        self.proj_a.apply(orthogonal_weights)
+        
     def forward(self, question, answer, qmask=None, amask=None, sharpening=False, thrd=0.10, alpha=0.00):
         '''
          input : batch, seq_len
@@ -499,62 +475,52 @@ class QAsim(nn.Module):
         '''
         c = copy.deepcopy
 
-        ####
-        # Step: apply highway and/or drop to the inputs and positional encoding
-        ####
-        # question = self.drop(self.highway(question))
-        # question = self.highway(question)
-        # answer = self.highway(answer) # share weights
-
-        ####
-        # Step: Self attention question and memory
-        ####
+        # find word alignment using the original embeddings
+        question_align = self.coattention(question, answer, answer, sharpening, amask) # [B, T, D]
+        answer_align = self.coattention(answer, question, question, sharpening, qmask)
+        
+        # concatenation (enrichment)
+        question = torch.cat( (question, question_align, question-question_align, question.mul(question_align)), -1 )
+        answer = torch.cat( (answer, answer_align, answer-answer_align, answer.mul(answer_align)), -1 ) # [B, T, 4*D]
+        
+        # project to lower dim
+        question = self.proj_q(question) # [B, T, D]
+        answer = self.proj_a(answer)
+        
         # add position information
         question = self.position(question)
         answer = self.position(answer) # add positional encoding
 
-        #residual connection + layer norm
+        # self-attention encoding
         question = self.encoder_q(question, qmask)
-        answer = self.encoder_q(answer, amask)
+        answer = self.encoder_a(answer, amask)
 
-        # alignment (can add external knowledge here)
-        question_align = self.coattention(question, answer, answer, sharpening, amask) # [B, T, D]
-        answer_align = self.coattention(answer, question, question, sharpening, qmask)
-
-        # concatenation (enrichment with the same orientation)
-        question = torch.cat( (question, question_align, question-question_align, question.mul(question_align)), -1 )
-        answer = torch.cat( (answer_align, answer, answer_align-answer, answer_align.mul(answer)), -1 ) # [B, T, 4*D]
-
-        # project to lower dim
-        question = self.proj(question)
-        answer = self.proj(answer)
-
-        # cross attention
+        # cross attention encoding
         question_crs = self.encoder_qa(question, answer, qmask, amask) # question: [B, T, D], mask: [B, T]
-        answer_crs = self.encoder_qa(answer, question, amask, qmask) # question: [B, T, D], mask: [B, T]
+        answer_crs = self.encoder_aq(answer, question, amask, qmask) # question: [B, T, D], mask: [B, T]
 
         question = question_crs # [B, T, D]
         answer = answer_crs
 
-        ###
-        # Step: Final linear layer
-        ####
+        # predict word importance
         q_uweight = self.fc_q(question) # [B, T, 1]
-        a_uweight = self.fc_q(answer)
-
+        a_uweight = self.fc_a(answer)
         if qmask is not None:
             q_weight = F.softmax(q_uweight.masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 1]
         else:
             q_weight = F.softmax(q_uweight, dim=1) # [B, T, 1]
-
         if amask is not None:
             a_weight = F.softmax(a_uweight.masked_fill(amask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 1]
         else:
             a_weight = F.softmax(a_uweight, dim=1) # [B, T, 1]
 
+        # weighted pooling to get sentence embeddings
         q_embd = torch.sum( q_weight.mul(question), dim=1 ).squeeze(1) # [B, D]
         a_embd = torch.sum( a_weight.mul(answer), dim=1 ).squeeze(1) # [B, D]
-
-        score = self.sim(q_embd, a_embd) # [B, 3]
+        q_max = torch.max( question, dim=1 )[0].squeeze(1)
+        a_max = torch.max( answer, dim=1 )[0].squeeze(1)
+        
+        final = torch.cat( (q_embd, a_embd, q_max, a_max), -1 ) # [B, 4*D]
+        score = self.classifier(final) # [B, 3]
 
         return score, q_weight.squeeze(), None

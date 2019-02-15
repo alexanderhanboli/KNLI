@@ -36,7 +36,7 @@ parser.add_argument('--bert_embd', default=False, action='store_true')
 parser.add_argument('--bert_layers', default=10, type=int)
 
 # Module optim options
-parser.add_argument('--opt', default='original', type=str, choices=['original', 'openai'])
+parser.add_argument('--opt', default='openai', type=str, choices=['original', 'openai'])
 parser.add_argument('--batch_size', default=8, type=int)
 parser.add_argument('--beta1', default=0.9, type=float)
 parser.add_argument('--beta2', default=0.999, type=float)

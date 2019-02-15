@@ -81,7 +81,7 @@ if __name__ == "__main__":
         random_id = str(randrange(10)) + str(int(time.time()))[-6:] # just returns 6 numbers
 
         opt['l2']  = choice([0.01, 0.0001])
-        opt['opt'] = choice(['original', 'openai'])
+        opt['opt'] = choice(['openai'])
         # opt['learning_rate'] = choice([10**uniform(-3.8,-2.5), 0.001])
         opt['hidden_size']  = choice([512])
         opt['heads'] = choice([4, 6, 10]) # divisible for 300
@@ -91,12 +91,9 @@ if __name__ == "__main__":
         # opt['ngram_sizes']  =  ','.join(str(e) for e in ngram_sizes)
         opt['droprate'] =  choice([0.10])
         # opt['entp_beta'] = choice([0.1, 0.2, 0.3, 0.4])
-        opt['num_layers'] = choice([1, 2, 4, 6])
-        opt['num_layers_cross'] = choice([1])
-        # opt['sharpening'] = choice([True])
-        # opt['rule_based'] = choice([True])
-        # opt['sim_thrd'] = choice([0.70, 0.80, 0.90, 0.99])
-        # opt['weight_thrd'] = choice([0.0, 0.1])
+        opt['num_layers'] = choice([1, 2, 4])
+        opt['num_layers_cross'] = choice([1, 2, 4])
+        opt['sharpening'] = choice([True, False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1
         opt['print_every'] = 2000
