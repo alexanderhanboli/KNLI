@@ -450,9 +450,9 @@ class QAsim(nn.Module):
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
 
         self.fc_q = nn.Sequential(
-            nn.Linear(embd_dim, hidden_size),
-            nn.ReLU(),
-            nn.Linear(hidden_size, 1),
+            nn.Linear(embd_dim, embd_dim),
+            nn.LeakyReLU(0.02),
+            nn.Linear(embd_dim, 1),
         )
         self.fc_a = c(self.fc_q)
 
@@ -462,7 +462,7 @@ class QAsim(nn.Module):
         self.apply(initialize_weights)
         self.proj_q.apply(orthogonal_weights)
         self.proj_a.apply(orthogonal_weights)
-        
+
     def forward(self, question, answer, qmask=None, amask=None, sharpening=False, thrd=0.10, alpha=0.00):
         '''
          input : batch, seq_len
@@ -478,15 +478,15 @@ class QAsim(nn.Module):
         # find word alignment using the original embeddings
         question_align = self.coattention(question, answer, answer, sharpening, amask) # [B, T, D]
         answer_align = self.coattention(answer, question, question, sharpening, qmask)
-        
+
         # concatenation (enrichment)
         question = torch.cat( (question, question_align, question-question_align, question.mul(question_align)), -1 )
         answer = torch.cat( (answer, answer_align, answer-answer_align, answer.mul(answer_align)), -1 ) # [B, T, 4*D]
-        
+
         # project to lower dim
         question = self.proj_q(question) # [B, T, D]
         answer = self.proj_a(answer)
-        
+
         # add position information
         question = self.position(question)
         answer = self.position(answer) # add positional encoding
@@ -519,7 +519,7 @@ class QAsim(nn.Module):
         a_embd = torch.sum( a_weight.mul(answer), dim=1 ).squeeze(1) # [B, D]
         q_max = torch.max( question, dim=1 )[0].squeeze(1)
         a_max = torch.max( answer, dim=1 )[0].squeeze(1)
-        
+
         final = torch.cat( (q_embd, a_embd, q_max, a_max), -1 ) # [B, 4*D]
         score = self.classifier(final) # [B, 3]
 

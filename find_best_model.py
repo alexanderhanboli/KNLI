@@ -10,8 +10,8 @@ parser = argparse.ArgumentParser()
 # Input data
 parser.add_argument('--check_point_dir', default='/home/ubuntu/projects/KNLI/check_points/')
 parser.add_argument('--model_name',  default='')
-parser.add_argument('--cp',  default=False, type = bool)
-
+parser.add_argument('--cp',  default=False, action='store_true')
+# Test data
 parser.add_argument('--ftest', default='snli_data.json')
 
 def get_fname_from_path(f):
@@ -56,82 +56,18 @@ def find_best_model(check_point_dir, finput):
           best_file = i
   return best_precision, best_recall, best_val, best_args, os.path.join(check_point_dir,best_file.replace('json', 'pt'))
 
-def move_to_s3(mfname_best):
+def move_to_mfiles(mfname_best):
     '''
-       copy model and json and log file to the S3
+       copy model and json and log file to the mfiles
     '''
     jfname_best = mfname_best.replace('.pt', '.json')
     jfname = jfname_best.replace('_best.json', '.json')
     mfname = mfname_best.replace('_best.pt', '.pt')
 
-    cmd1 = '/apollo/env/BlueshiftModelingTools/bin/s3put.py -c '
-    cmd2 = 'com.amazon.access.bsft-bluetrain-hoverboard-hanboli-1 -e '
-    cmd3 = 'com.amazon.blueshift.bluetrain.keys.prod -b bluetrain-workspaces -k '
-    cmd4 = 'hanboli/models/'
-    cmd_prefix = cmd1 + cmd2 + cmd3 + cmd4
-
-    print('Move to S3...')
-    cmd1 = cmd_prefix + get_fname_from_path(mfname_best) + ' ' + mfname_best
-    print('1--> ' + mfname_best)
+    print('Move best models to mfiles/ ...')
+    cmd1 = 'cp ' + mfname_best + ' ./mfiles/' + get_fname_from_path(mfname_best)
+    print('model --> ' + mfname_best)
     os.system(cmd1)
-
-    if '_F1_' in mfname_best:
-      mftemp = mfname_best.replace('_F1_', '_')
-      cmd10 = cmd_prefix + get_fname_from_path(mftemp) + ' ' + mftemp
-      print('1.0--> ' + mftemp)
-      os.system(cmd10)
-
-    if '_S1_' in mfname_best:
-      mftemp = mfname_best.replace('_S1_', '_')
-      cmd10 = cmd_prefix + get_fname_from_path(mftemp) + ' ' + mftemp
-      print('1.0--> ' + mftemp)
-      os.system(cmd10)
-
-    if '_F2_' in mfname_best:
-      mftemp = mfname_best.replace('_F2_', '_')
-      cmd10 = cmd_prefix + get_fname_from_path(mftemp) + ' ' + mftemp
-      print('1.0--> ' + mftemp)
-      os.system(cmd10)
-
-    if os.path.exists(mfname) == True:
-      cmd2 = cmd_prefix + get_fname_from_path(mfname) + ' ' + mfname
-      print('2--> ' + mfname)
-      os.system(cmd2)
-
-    cmd3 = cmd_prefix + get_fname_from_path(jfname_best) + ' ' + jfname_best
-    print('3--> ' + jfname_best)
-    os.system(cmd3)
-
-    if '_F1_' in jfname_best:
-      mjfname = jfname_best.replace('_F1_', '_')
-      cmd30 = cmd_prefix + get_fname_from_path(mjfname) + ' ' + mjfname
-      print('3.0--> ' + mjfname)
-      os.system(cmd30)
-
-    if '_F2_' in jfname_best:
-      mjfname = jfname_best.replace('_F2_', '_')
-      cmd30 = cmd_prefix + get_fname_from_path(mjfname) + ' ' + mjfname
-      print('3.0--> ' + mjfname)
-      os.system(cmd30)
-
-    if '_S1_' in jfname_best:
-      mjfname = jfname_best.replace('_S1_', '_')
-      cmd30 = cmd_prefix + get_fname_from_path(mjfname) + ' ' + mjfname
-      print('3.0--> ' + mjfname)
-      os.system(cmd30)
-
-    if os.path.exists(jfname) == True:
-      cmd4 = cmd_prefix + get_fname_from_path(jfname) + ' ' + jfname
-      print('4--> ' + jfname)
-      os.system(cmd4)
-
-    # aeff_NN1_AEF_7634000_B128.pt ==> /home/ec2-user/logs/NN1_AEF_7634000_D*.log
-    log_name = '_'.join((get_fname_from_path(mfname)).split('.')[0].split('_')[1:4])+'_D*.log'
-    log_name = '/home/ec2-user/logs/'+ log_name
-    log_name = glob.glob(log_name)[0]
-    cmd5 = cmd_prefix + get_fname_from_path(log_name) + ' ' + log_name
-    print('5--> ' + log_name)
-    os.system(cmd5)
 
 if __name__ == "__main__":
 
@@ -186,5 +122,5 @@ if __name__ == "__main__":
     if args.cp == True:
       print("-----------------------------------")
       for i in cp_list:
-          move_to_s3(i)
+          move_to_mfiles(i)
           print('----------------')

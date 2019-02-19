@@ -13,7 +13,7 @@ import argparse
 import json
 from itertools import compress
 from collections import OrderedDict
-from misc.utilities import initialize_weights, timeSince, dump_to_json, create_dir, Preload_embedding, read_json_file
+from misc.utilities import initialize_weights, timeSince, dump_to_json, create_dir, Preload_embedding, read_json_file, load_vectors
 from misc.torch_utility import get_state, load_model_states
 from misc.data_loader import BatchDataLoader
 
@@ -267,7 +267,10 @@ if __name__ == "__main__":
         dset_val   = BatchDataLoaderBert(fpath = args.fp_val, split='val',
                                     emd_dim=args.fp_word_embd_dim, num_bert_layers=args.bert_layers)
     else:
-        pre_embd = Preload_embedding(args.fp_embd, args.fp_embd_context, args.fp_embd_type)
+        if args.fp_embd.split('.')[-1] == 'bin':
+            pre_embd = Preload_embedding(args.fp_embd, args.fp_embd_context, args.fp_embd_type)
+        elif args.fp_embd.split('.')[-1] == 'vec' or args.fp_embd.split('.')[-1] == 'txt':
+            pre_embd = load_vectors(args.fp_embd)
 
         dset_train = BatchDataLoader(fpath = args.fp_train, embd_dict = pre_embd,
                                      split='train', emd_dim=args.fp_word_embd_dim)
