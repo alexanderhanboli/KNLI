@@ -94,7 +94,7 @@ def load_vectors(fname):
         tokens = line.rstrip().split(' ')
         data[tokens[0]] = np.array(list(map(float, tokens[1:])))
     return data
-    
+
 def initialize_weights(model):
     for p in filter(lambda p: p.requires_grad, model.parameters()):
         if p.dim() > 1:
