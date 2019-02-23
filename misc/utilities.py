@@ -95,12 +95,12 @@ def load_vectors(fname):
         data[tokens[0]] = np.array(list(map(float, tokens[1:])))
     return data
 
-def initialize_weights(model):
-    for p in filter(lambda p: p.requires_grad, model.parameters()):
-        if p.dim() > 1:
-            nn.init.xavier_uniform_(p)
+# def initialize_weights(model):
+#     for p in filter(lambda p: p.requires_grad, model.parameters()):
+#         if p.dim() > 1:
+#             nn.init.xavier_uniform_(p)
 
-def orthogonal_weights(model):
-    for p in filter(lambda p: p.requires_grad, model.parameters()):
-        if p.dim() > 1:
-            nn.init.orthogonal_(p)
+# def orthogonal_weights(model):
+#     for p in filter(lambda p: p.requires_grad, model.parameters()):
+#         if p.dim() > 1:
+#             nn.init.orthogonal_(p)

@@ -13,12 +13,13 @@ import argparse
 import json
 from itertools import compress
 from collections import OrderedDict
-from misc.utilities import initialize_weights, timeSince, dump_to_json, create_dir, Preload_embedding, read_json_file
+from misc.utilities import timeSince, dump_to_json, create_dir, Preload_embedding, read_json_file
 from misc.torch_utility import get_state, load_model_states
 from misc.data_loader import BatchDataLoader
-from misc.opt import OpenAIAdam
 
 import sys
+import datetime
+import pytz
 from sklearn import metrics
 import nltk
 nltk.download('punkt')
@@ -36,7 +37,7 @@ parser.add_argument('--bert_embd', default=False, action='store_true')
 parser.add_argument('--bert_layers', default=10, type=int)
 
 # Module optim options
-parser.add_argument('--opt', default='openai', type=str, choices=['original', 'openai'])
+parser.add_argument('--opt', default='openai', type=str, choices=['original', 'bert', 'openai'])
 parser.add_argument('--batch_size', default=8, type=int)
 parser.add_argument('--beta1', default=0.9, type=float)
 parser.add_argument('--beta2', default=0.999, type=float)
@@ -337,8 +338,9 @@ if __name__ == "__main__":
         optimizer_adam = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
                                betas=(args.beta1, args.beta2), eps=args.e, weight_decay = args.l2)
         optimizer = net.NoamOpt(args.fp_embd_dim, 2, 5000, optimizer_adam)
-        # optimizer = net.AdamDecay(args.learning_rate, 0.9**(1.0/10000), optimizer_adam)
+
     elif args.opt == 'openai':
+        from misc.openai_optimization import OpenAIAdam
         n_updates_total = len(train_loader) * args.n_epochs
         optimizer = OpenAIAdam(filter(lambda p: p.requires_grad, model.parameters()),
                                lr=args.lr,
@@ -348,8 +350,22 @@ if __name__ == "__main__":
                                b1=args.beta1,
                                b2=args.beta2,
                                e=args.e,
-                               l2=args.l2,
+                               weight_decay=args.l2,
                                vector_l2=args.vector_l2,
+                               max_grad_norm=args.max_grad_norm)
+
+    elif args.opt == 'bert':
+        from misc.bert_optimization import BertAdam
+        n_updates_total = len(train_loader) * args.n_epochs
+        optimizer = BertAdam(filter(lambda p: p.requires_grad, model.parameters()),
+                               lr=args.lr,
+                               warmup=args.lr_warmup,
+                               t_total=n_updates_total,
+                               schedule=args.lr_schedule,
+                               b1=args.beta1,
+                               b2=args.beta2,
+                               e=args.e,
+                               weight_decay=args.l2,
                                max_grad_norm=args.max_grad_norm)
 
     # if there is GPU, make them cuda
@@ -433,7 +449,7 @@ if __name__ == "__main__":
             for j, data_val in enumerate(val_loader, 0):
 
                 print_out = False
-                if j % 10 == 0:
+                if j == len(val_loader)-1:
                     print_out = True
                 val_loss_correct = evaluate(data_val, use_mask = mask_data, print_out = print_out)
                 val_loss    += val_loss_correct[0]
@@ -464,8 +480,9 @@ if __name__ == "__main__":
                 ###############
                 # Save best model in pt file and other data in json file
                 ###############
-                fname_ck =  fname_part + best_load_ext +'_best.pt'
-                fname_json =  fname_part + best_load_ext + '_best.json'
+                timenow = datetime.datetime.now(pytz.timezone('US/Pacific')).strftime("_%B-%d-%Y-%I:%M%p_")
+                fname_ck =  fname_part + best_load_ext + timenow + '_best.pt'
+                fname_json =  fname_part + best_load_ext + timenow + '_best.json'
                 stats['best_val_accuracy'] = best_val_acc
                 stats['best_val_f1'] = best_val_f1
                 stats['best_precision'] = best_val_precision

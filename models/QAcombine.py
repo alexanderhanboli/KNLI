@@ -7,7 +7,6 @@ import numpy as np
 import os
 import math, copy, time
 from torch.autograd import Variable
-from misc.utilities import initialize_weights, orthogonal_weights
 
 class NoamOpt:
     "Optim wrapper that implements rate."
@@ -37,33 +36,6 @@ class NoamOpt:
             (self.model_size ** (-self._decay) *
             min(step ** (-self._decay), step * self.warmup ** (-1-self._decay)))
 
-# class NoamOpt: # sine-periodic version
-#     "Optim wrapper that implements rate."
-#     def __init__(self, model_size, factor, warmup, optimizer):
-#         self.optimizer = optimizer
-#         self._step = 0
-#         self.warmup = warmup
-#         self.factor = factor
-#         self.model_size = model_size
-#         self._rate = 0
-#
-#     def step(self):
-#         "Update parameters and rate"
-#         self._step += 1
-#         rate = self.rate()
-#         for p in self.optimizer.param_groups:
-#             p['lr'] = rate
-#         self._rate = rate
-#         self.optimizer.step()
-#
-#     def rate(self, step = None):
-#         "Implement `lrate` above"
-#         if step is None:
-#             step = self._step
-#         return self.factor * \
-#             (self.model_size ** (-0.5) *
-#             min(step ** (-0.5) * (1.0 + np.sin(2 * step / self.warmup) ** 2), step * self.warmup ** (-1.5)))
-
 class AdamDecay:
     "Optim wrapper that implements rate."
     def __init__(self, lr, decay, optimizer):
@@ -85,6 +57,17 @@ class AdamDecay:
         if step is None:
             step = self._step
         return (self._rate * self._decay ** step)
+
+def gelu(x):
+    """Implementation of the gelu activation function.
+        For information: OpenAI GPT's gelu is slightly different (and gives slightly different results):
+        0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
+        Also see https://arxiv.org/abs/1606.08415
+    """
+    return x * 0.5 * (1.0 + torch.erf(x / math.sqrt(2.0)))
+
+def swish(x):
+    return x * torch.sigmoid(x)
 
 def clones(module, N):
     "Produce N identical layers."
@@ -111,24 +94,26 @@ def attention(query, key, value, mask=None, dropout=None):
 
     return torch.matmul(p_attn, value), p_attn
 
+"""LayerNorm
+"""
+# try:
+#     from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
+# except ImportError:
+print("Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex.")
 class LayerNorm(nn.Module):
-    "Construct a layernorm module."
-    def __init__(self, dim, eps=1e-6):
-
+    def __init__(self, hidden_size, eps=1e-12):
+        """Construct a layernorm module in the TF style (epsilon inside the square root).
+        """
         super(LayerNorm, self).__init__()
-        self.alpha = nn.Parameter(torch.ones(dim))
-        self.beta = nn.Parameter(torch.zeros(dim))
-        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.bias = nn.Parameter(torch.zeros(hidden_size))
+        self.variance_epsilon = eps
 
     def forward(self, x):
-        '''
-           This module applies layer norm
-        '''
         mean = x.mean(-1, keepdim=True)
-        std  = x.std(-1, keepdim=True)
-        norm = self.alpha * (x - mean) / (std + self.eps) + self.beta
-
-        return norm
+        var = (x - mean).pow(2).mean(-1, keepdim=True)
+        x = (x - mean) / torch.sqrt(var + self.variance_epsilon)
+        return self.weight * x + self.bias
 
 class PositionwiseFeedForward(nn.Module):
 
@@ -145,7 +130,7 @@ class PositionwiseFeedForward(nn.Module):
         '''
             x is B*T*D
         '''
-        out = self.ff2(self.dropout(F.relu(self.ff1(x))))
+        out = self.ff2(self.dropout(gelu(self.ff1(x))))
 
         return out
 
@@ -227,6 +212,9 @@ class SimAttn(nn.Module):
         self.heads = heads
 
         ## Linear layers for multi-head attention
+        self.fwQ  = nn.Linear(d_model, d_model) # for the query
+        self.fwK  = nn.Linear(d_model, d_model) # for the key
+
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
@@ -243,18 +231,14 @@ class SimAttn(nn.Module):
 
         batch_size = query.size(0)
 
-        ##
-        # Step 2: change the shape to d_k, since we pply attention per d_k not d_model
-        # now the shape of query is batch_size * heads * sentence_length(T) * d_k
-        ##
+        query = self.fwQ(query) # [B, T, D]
+        key   = self.fwK(key)
+        # will not map values
+
         query = query.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, T, H, dk]
         key   = key.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
         value = value.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
 
-        ##
-        # Step 3) do attention
-        # query, key, value are all of the shape [B, heads, T, d_k]
-        ##
         x, self.attn  = attention(query, key, value, mask=mask, dropout=self.dropout)
 
         # sharpening the attention distribution
@@ -262,10 +246,6 @@ class SimAttn(nn.Module):
             self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
             x = torch.matmul(self.attn, value)
 
-        ##
-        # Step 4.1) "Concat" using a view
-        # output is of shape [batch_size, sentence_length, d_model]
-        ##
         out = x.transpose(1, 2).contiguous() \
              .view(batch_size, -1, self.heads * self.d_k) # [B, T, D]
 
@@ -288,32 +268,50 @@ class Highway(nn.Module):
         '''
         for i in range(self.num_layers):
 
-            H = F.relu(self.linear[i](x))
+            H = gelu(self.linear[i](x))
             T = F.sigmoid(self.gate[i](x))
 
             x = T * H + (1 - T) * x
 
         return self.fc(x)
 
+# class FixedPositionalEncoding(nn.Module):
+#     "Implement the PE function."
+#     def __init__(self, d_model, dropout, max_len=5000):
+#         super(FixedPositionalEncoding, self).__init__()
+#         self.dropout = nn.Dropout(p=dropout)
+#
+#         # Compute the positional encodings once in log space.
+#         pe = torch.zeros(max_len, d_model)
+#         position = torch.arange(0., max_len).unsqueeze(1)
+#         div_term = torch.exp(torch.arange(0., d_model, 2) *
+#                              -(math.log(10000.0) / d_model))
+#         pe[:, 0::2] = torch.sin(position * div_term)
+#         pe[:, 1::2] = torch.cos(position * div_term)
+#         pe = pe.unsqueeze(0)
+#         self.register_buffer('pe', pe)
+#
+#     def forward(self, x):
+#         x = x + Variable(self.pe[:, :x.size(1)],
+#                          requires_grad=False)
+#         return self.dropout(x)
+
 class PositionalEncoding(nn.Module):
     "Implement the PE function."
     def __init__(self, d_model, dropout, max_len=5000):
         super(PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
-
+        self.norm = LayerNorm(d_model, eps=1e-12)
         # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0., max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0., d_model, 2) *
-                             -(math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
+        self.position_embeddings = nn.Embedding(max_len, d_model)
 
     def forward(self, x):
-        x = x + Variable(self.pe[:, :x.size(1)],
-                         requires_grad=False)
+        seq_length = x.size(1) # T
+        position_ids = torch.arange(seq_length, dtype=torch.long, device=x.device)
+        position_ids = position_ids.unsqueeze(0).expand(x.size(0), x.size(1)) # [B, T]
+        position_embeddings = self.position_embeddings(position_ids) # [B, T, D]
+        x = x + position_embeddings
+        x = self.norm(x)
         return self.dropout(x)
 
 class Encoder(nn.Module):
@@ -322,14 +320,12 @@ class Encoder(nn.Module):
 
         super(Encoder, self).__init__()
         self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
 
     def forward(self, x, mask=None):
         "Pass the input (and mask) through each layer in turn."
         for layer in self.layers:
             x = layer(x, mask)
-
-        return self.norm(x)
+        return x
 
 class EncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
@@ -338,24 +334,24 @@ class EncoderLayer(nn.Module):
         super(EncoderLayer, self).__init__()
         self.self_attn = self_attn
         self.feed_forward = feed_forward
-        self.norm = LayerNorm(size)
+        self.norm_in = LayerNorm(size, eps=1e-12)
+        self.norm_out = LayerNorm(size, eps=1e-12)
         self.dropout = nn.Dropout(dropout)
         self.size = size
 
     def forward(self, x, mask=None):
 
         # self attention layer w/ resnet
-        res = self.norm(x)
-        res = self.self_attn(res, res, res, mask)
+        res = self.self_attn(x, x, x, mask)
         res = self.dropout(res)
         x = x + res
 
         # feed forward layer w/ resnet
-        res = self.norm(x)
+        res = self.norm_in(x)
         res = self.feed_forward(res)
         res = self.dropout(res)
         x = x + res
-
+        x = self.norm_out(x)
         return x
 
 class CrEncoder(nn.Module):
@@ -364,14 +360,12 @@ class CrEncoder(nn.Module):
 
         super(CrEncoder, self).__init__()
         self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
 
     def forward(self, x, m, qmask=None, amask=None):
         "Pass the input (and mask) through each layer in turn."
         for layer in self.layers:
             x = layer(x, m, qmask, amask)
-
-        return self.norm(x)
+        return x
 
 class CrEncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
@@ -381,41 +375,41 @@ class CrEncoderLayer(nn.Module):
         self.self_attn = self_attn
         self.cross_attn = cross_attn
         self.feed_forward = feed_forward
-        self.norm = LayerNorm(size)
+        self.norm_in = LayerNorm(size, eps=1e-12)
+        self.norm_mid = LayerNorm(size, eps=1e-12)
+        self.norm_out = LayerNorm(size, eps=1e-12)
         self.dropout = nn.Dropout(dropout)
         self.size = size
 
     def forward(self, x, m, qmask=None, amask=None):
 
         # self attention layer w/ resnet
-        res = self.norm(x)
-        res = self.self_attn(res, res, res, qmask)
+        res = self.self_attn(x, x, x, qmask)
         res = self.dropout(res)
         x = x + res
 
         # cross attention
-        res = self.norm(x)
+        res = self.norm_in(x)
         res = self.cross_attn(res, m, m, amask)
         res = self.dropout(res)
         x = x + res
 
         # feed forward layer w/ resnet
-        res = self.norm(x)
+        res = self.norm_mid(x)
         res = self.feed_forward(res)
         res = self.dropout(res)
         x = x + res
-
+        x = self.norm_out(x)
         return x
 
 class Classifier(nn.Module):
-    def __init__(self, embd_dim, hidden_size):
+    def __init__(self, hidden_size):
 
         super(Classifier, self).__init__()
 
         self.simf = nn.Sequential(
-            nn.Linear(embd_dim * 4, hidden_size),
+            nn.Linear(hidden_size, hidden_size),
             nn.Tanh(),
-            # nn.Dropout(),
             nn.Linear(hidden_size, 3),
         )
 
@@ -451,20 +445,16 @@ class QAcombine(nn.Module):
         self.hidden_size = hidden_size
 
         # layers
-        self.highway = Highway(h_size=word_embd_dim, h_out=embd_dim, num_layers=1)
+        # self.highway = Highway(h_size=word_embd_dim, h_out=embd_dim, num_layers=1)
 
-        self.coattention = SimAttn(heads=1, d_model=embd_dim, dropout=0.0)
+        self.coattention = SimAttn(heads=1, d_model=embd_dim, dropout=drop_rate)
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
 
-        self.proj_q = nn.Sequential(
-            nn.Linear(4*embd_dim, embd_dim, bias=False),
-            # nn.ReLU(),
-        )
-        self.proj_a = nn.Sequential(
-            nn.Linear(4*embd_dim, embd_dim, bias=False),
-            # nn.ReLU(),
-        )
+        self.proj_q = nn.Linear(4*embd_dim, embd_dim, bias=False)
+        self.proj_a = nn.Linear(4*embd_dim, embd_dim, bias=False)
+
+
         attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
         ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
         self.encoder_q = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
@@ -475,19 +465,51 @@ class QAcombine(nn.Module):
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
         self.encoder_aa = c(self.encoder_qq)
 
-        self.fc_q = nn.Sequential(
-            nn.Linear(embd_dim, embd_dim),
-            nn.LeakyReLU(0.02),
-            nn.Linear(embd_dim, 1),
-        )
-        self.fc_a = c(self.fc_q)
+        self.fc_q = nn.Linear(embd_dim, hidden_size)
+        self.fc_a = nn.Linear(embd_dim, hidden_size)
+        self.weight_q = nn.Linear(hidden_size, 1)
+        self.weight_a = nn.Linear(hidden_size, 1)
 
-        self.classifier = Classifier(embd_dim=embd_dim, hidden_size=hidden_size)
+        self.proj = nn.Linear(4*embd_dim, hidden_size, bias=False)
+
+        self.classifier = Classifier(hidden_size=hidden_size)
 
         # initialize weights
-        self.apply(initialize_weights)
-        self.proj_q.apply(orthogonal_weights)
-        self.proj_a.apply(orthogonal_weights)
+        self.apply(self.initialize_weights)
+        self.proj_q.apply(self.orthogonal_weights)
+        self.proj_a.apply(self.orthogonal_weights)
+        self.proj.apply(self.orthogonal_weights)
+
+    def initialize_weights(self, module):
+        """ Initialize the weights.
+        """
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            # Slightly different from the TF version which uses truncated_normal for initialization
+            # cf https://github.com/pytorch/pytorch/pull/5617
+            nn.init.normal_(module.weight.data, 0.0, 0.02)
+            # nn.init.xavier_normal_(module.weight.data)
+        elif isinstance(module, LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.Sequential):
+            for p in module:
+                self.initialize_weights(p)
+        if isinstance(module, nn.Linear) and module.bias is not None:
+            module.bias.data.zero_()
+
+    def orthogonal_weights(self, module):
+        """ Initialize the weights to be orthogonal.
+        """
+        if isinstance(module, nn.Linear):
+            nn.init.orthogonal_(module.weight.data, gain=1.0)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+        elif isinstance(module, nn.Sequential):
+            for p in module:
+                self.orthogonal_weights(p)
 
     def forward(self, question, answer, qmask=None, amask=None, sharpening=False, thrd=0.10, alpha=0.00):
         '''
@@ -524,8 +546,8 @@ class QAcombine(nn.Module):
         answer = self.encoder_aa(answer, amask)
 
         # predict word importance
-        q_uweight = self.fc_q(question) # [B, T, 1]
-        a_uweight = self.fc_a(answer)
+        q_uweight = self.weight_q(gelu(self.fc_q(question))) # [B, T, 1]
+        a_uweight = self.weight_a(gelu(self.fc_a(answer)))
         if qmask is not None:
             q_weight = F.softmax(q_uweight.masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 1]
         else:
@@ -542,6 +564,7 @@ class QAcombine(nn.Module):
         a_max = torch.max( answer, dim=1 )[0].squeeze(1)
 
         final = torch.cat( (q_ave, q_max, a_ave, a_max), -1 ) # [B, 4*D]
+        final = self.proj(final) # [B, hidden_size]
 
         score = self.classifier(final) # [B, 3]
 

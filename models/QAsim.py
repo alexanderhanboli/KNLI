@@ -442,12 +442,10 @@ class QAsim(nn.Module):
         ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
         self.encoder_q = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers)
-        self.encoder_a = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
-                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers)
+        self.encoder_a = c(self.encoder_q)
         self.encoder_qa = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
-        self.encoder_aq = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
-                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
+        self.encoder_aq = c(self.encoder_qa)
 
         self.fc_q = nn.Sequential(
             nn.Linear(embd_dim, embd_dim),
@@ -492,15 +490,12 @@ class QAsim(nn.Module):
         answer = self.position(answer) # add positional encoding
 
         # self-attention encoding
-        question = self.encoder_q(question, qmask)
-        answer = self.encoder_a(answer, amask)
+        question_e = self.encoder_q(question, qmask)
+        answer_e = self.encoder_a(answer, amask)
 
         # cross attention encoding
-        question_crs = self.encoder_qa(question, answer, qmask, amask) # question: [B, T, D], mask: [B, T]
-        answer_crs = self.encoder_aq(answer, question, amask, qmask) # question: [B, T, D], mask: [B, T]
-
-        question = question_crs # [B, T, D]
-        answer = answer_crs
+        question = self.encoder_qa(question_e, answer_e, qmask, amask) # question: [B, T, D], mask: [B, T]
+        answer = self.encoder_aq(answer_e, question_e, amask, qmask) # question: [B, T, D], mask: [B, T]
 
         # predict word importance
         q_uweight = self.fc_q(question) # [B, T, 1]
@@ -520,7 +515,7 @@ class QAsim(nn.Module):
         q_max = torch.max( question, dim=1 )[0].squeeze(1)
         a_max = torch.max( answer, dim=1 )[0].squeeze(1)
 
-        final = torch.cat( (q_embd, a_embd, q_max, a_max), -1 ) # [B, 4*D]
+        final = torch.cat( (q_embd, q_max, a_embd, a_max), -1 ) # [B, 4*D]
         score = self.classifier(final) # [B, 3]
 
         return score, q_weight.squeeze(), None
