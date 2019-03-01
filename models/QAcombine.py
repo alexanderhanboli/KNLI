@@ -249,13 +249,11 @@ class MultiHeadedAttn(nn.Module):
 
 class SimAttn(nn.Module):
 
-    def __init__(self, heads=1, d_model=300, dropout=0.0):
+    def __init__(self, d_model=300, dropout=0.0):
         "Take in number of heads, model size, and dropout rate."
         super(SimAttn, self).__init__()
-        assert d_model % heads == 0
-        # We assume d_v always equals d_k
-        self.d_k = d_model // heads
-        self.heads = heads
+        
+        self.d_k = d_model
 
         ## Linear layers for multi-head attention
         self.fwQ  = nn.Linear(d_model, d_model) # for the query
@@ -280,10 +278,6 @@ class SimAttn(nn.Module):
         query = self.fwQ(query) # [B, T, D]
         key   = self.fwK(key)
         # will not map values
-
-        query = query.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, T, H, dk]
-        key   = key.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
-        value = value.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
 
         x, self.attn  = attention(query, key, value, mask=mask, dropout=self.dropout)
 

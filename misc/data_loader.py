@@ -28,10 +28,13 @@ class BatchDataLoader(Dataset):
      This data loader loads data.
      This supports any batch size.
     '''
-    def __init__(self, fpath='', embd_dict=None, split='', max_q_len = 82, max_ans_len = 44, emd_dim = 300):
+    def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_q_len = 82, 
+                 max_ans_len = 44, emd_dim = 300, concept_dim = 3):
 
         self.embd_dict = embd_dict
+        self.concept_dict = concept_dict
         self.emd_dim = emd_dim
+        self.concept_dim = concept_dim
         self.split = split
 
         # load in utterances
@@ -62,17 +65,27 @@ class BatchDataLoader(Dataset):
         vecQ1 = np.zeros((self.max_q_len, self.emd_dim), dtype = np.float32)
         vecQ2 = np.zeros((self.max_ans_len, self.emd_dim), dtype = np.float32)
 
+        # concept vectors
+        # q -> a
+        conceptQ1 = np.zeros((self.max_q_len, self.max_ans_len, self.concept_dim), dtype = np.float32) # [T1, T2, d]
+        # a -> q
+        conceptQ2 = np.zeros((self.max_ans_len, self.max_q_len, self.concept_dim), dtype = np.float32) # [T2, T1, d]
+
         # process query (premise)
         for i, widx in enumerate(query):
             if i >= self.max_q_len:
                 break
-            vecQ1[i,:] = self.embd_dict[widx] # get the word embedding
+            vecQ1[i,:] = self.embd_dict[widx] # get the word embedding for premise
 
-        # process answer (hypothesis)
-        for i, widx in enumerate(answer):
-            if i >= self.max_ans_len:
-                break
-            vecQ2[i,:] = self.embd_dict[widx] # get the word embedding
+            for j, widy in enumerate(answer):
+                if j >= self.max_ans_len:
+                    break
+
+                if i == 0:
+                    vecQ2[j,:] = self.embd_dict[widy] # get the word embedding for hypothesis
+
+                conceptQ1[i, j, :] = self.concept_dict[widx][widy]
+                conceptQ2[j, i, :] = self.concept_dict[widy][widx]
 
         # create masks
         query_mask = build_mask(len(query), self.max_q_len)
@@ -80,6 +93,8 @@ class BatchDataLoader(Dataset):
 
         data  = {'q1':vecQ1,
                  'q2':vecQ2,
+                 'concept1':conceptQ1,
+                 'concept2':conceptQ2,
                  'qmask':query_mask,
                  'amask':answer_mask,
                  'label':label,
