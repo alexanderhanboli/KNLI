@@ -8,13 +8,13 @@ import argparse
 
 parser = argparse.ArgumentParser()
 # params
-parser.add_argument('--model_name', default='QAcombine')
+parser.add_argument('--model_name', default='QAconcept')
 parser.add_argument('--gpu', type=str, default='0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7', help='used gpu')
 # parser.add_argument('--gpu', type=str, default='0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15', help='used gpu')
 parser.add_argument('--cp',  default=False, action='store_true')
-parser.add_argument('--fp_train', default='./data/snli_data.json')
-parser.add_argument('--fp_val',   default='./data/snli_data.json')
-parser.add_argument('--fp_embd',  default='./data/wiki.en.bin')
+parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
+parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
+parser.add_argument('--fp_embd',  default='./data/fasttext/wiki.en.bin')
 parser.add_argument('--n_epochs', default=500, type=int)
 # test data
 # parser.add_argument('--ftest', default='hho_RT_new_splits.json')
@@ -93,7 +93,7 @@ if __name__ == "__main__":
         opt['val_interval'] = 1
         opt['print_every'] = 2000
         opt['loader_num_workers'] = 4
-        opt['batch_size'] = choice([16])
+        opt['batch_size'] = choice([8, 16])
         opt['checkpoint_every'] = 20
         opt['seed_random'] = 1314 #np.random.randint(100, 10000)
         # opt['lr_decay'] = choice([10**uniform(-1.2,-.01), 1])

@@ -27,9 +27,9 @@ nltk.download('punkt')
 
 parser = argparse.ArgumentParser()
 # Input data
-parser.add_argument('--fp_train', default='./data/snli_data.json')
-parser.add_argument('--fp_val',   default='./data/snli_data.json')
-parser.add_argument('--fp_embd',  default='./data/wiki.en.bin')
+parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
+parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
+parser.add_argument('--fp_embd',  default='./data/fasttext/wiki.en.bin')
 parser.add_argument('--fp_word_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_context',  default='')
@@ -69,7 +69,7 @@ parser.add_argument('--log_id', default='dummy123')
 parser.add_argument('--checkpoint_every', default=10, type=int)
 parser.add_argument('--seed_random', default=1019, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
-parser.add_argument('--model_name', default='QAcombine')
+parser.add_argument('--model_name', default='QAconcept')
 parser.add_argument('--load_model', default=False, action='store_true')
 
 #
@@ -160,7 +160,7 @@ def evaluate(data, use_mask = True, print_out = False):
     concept_qa, concept_aq = data['concept_qa'], data['concept_aq']
     q1, a1, label = Variable(q1), Variable(a1), Variable(label)
     concept_qa, concept_aq = Variable(concept_qa), Variable(concept_aq)
-    
+
     mem_size = q1.size()[1]
     b_size = q1.size()[0]
 
@@ -317,9 +317,9 @@ if __name__ == "__main__":
                          heads = args.heads, embd_dim=args.fp_embd_dim,
                          word_embd_dim=args.fp_word_embd_dim)
 
-    elif args.model_name == 'QAcombine':
+    elif args.model_name == 'QAconcept':
         import models.QAcombine as net
-        model = net.QAcombine(hidden_size = args.hidden_size, drop_rate = args.droprate,
+        model = net.QAconcept(hidden_size = args.hidden_size, drop_rate = args.droprate,
                          num_layers = args.num_layers,
                          num_layers_cross = args.num_layers_cross,
                          heads = args.heads, embd_dim=args.fp_embd_dim,
@@ -479,7 +479,7 @@ if __name__ == "__main__":
             stats['val_recall'].append(val_recall)
             stats['val_acc'].append(val_correct)
 
-        if val_correct > best_val_acc:
+            if val_correct > best_val_acc:
                 best_val_f1 = val_f1
                 best_val_acc = val_correct
                 best_val_precision = val_precision
@@ -515,7 +515,7 @@ if __name__ == "__main__":
                 print("Best val f1 %.4f, precision %.4f, recall %.4f, and acc %.4f so far in epoch %d after %d steps"
                        % (best_val_f1, best_val_precision, best_val_recall, best_val_acc, epoch, optimizer._step))
 
-        else:
+            else:
                 print('Validation f1 %.4f, precision %.4f, recall %.4f, and accuracy %.4f in epoch %d after %d steps'
                        % (val_f1, val_precision, val_recall, val_correct, epoch, optimizer._step))
                 print("Best val f1 %.4f, precision %.4f, recall %.4f, and acc %.4f so far in epoch %d"

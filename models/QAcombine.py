@@ -6,7 +6,7 @@ import random
 import numpy as np
 import os
 import math, copy, time
-from torch.autograd import 
+from torch.autograd import Variable
 
 import pdb
 
@@ -275,7 +275,6 @@ class SimAttn(nn.Module):
         '''
         if mask is not None:
             mask = mask.unsqueeze(1) # [B, 1, T]
-            mask = mask.unsqueeze(1) # [B, 1, 1, T]
 
         batch_size = query.size(0)
 
@@ -285,17 +284,16 @@ class SimAttn(nn.Module):
 
         if hL is not None and hR is not None:
             x, self.attn  = concept_attention(query, key, value, hL, hR, mask=mask, dropout=self.dropout)
+            # x: [B, T1, d_k]
         else:
             x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+            
         # sharpening the attention distribution
         if sharpening:
             self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
-            x = torch.matmul(self.attn, value)
+            x = torch.diagonal( torch.matmul(self.attn_, value), dim1=1, dim2=2 ).transpose(-2, -1)
 
-        out = x.transpose(1, 2).contiguous() \
-             .view(batch_size, -1, self.heads * self.d_k) # [B, T, D]
-
-        return out
+        return x
 
 class Highway(nn.Module):
     def __init__(self, h_size, h_out, num_layers=2):
@@ -481,7 +479,7 @@ class Classifier(nn.Module):
 ##############################
 #### STEM model
 ##############################
-class QAcombine(nn.Module):
+class QAconcept(nn.Module):
 
     def __init__(self, hidden_size = 512, drop_rate = 0.1,
                  num_layers = 4, num_layers_cross = 2, heads = 4,
@@ -491,7 +489,7 @@ class QAcombine(nn.Module):
             This model use a simple summation of Fasttext word embeddings to represent each question in the pair.
             Need to make sure that embd_dim % heads == 0.
         '''
-        super(QAcombine, self).__init__()
+        super(QAconcept, self).__init__()
         c = copy.deepcopy
         if word_embd_dim == None:
             word_embd_dim = embd_dim
@@ -578,6 +576,8 @@ class QAcombine(nn.Module):
                 memory:   BxTxD
                 w1, w2: [B,T,D]
                 qlength: [B, 1]
+                qa_concept: [B, T1, T2, num_concepts]
+                aq_concept: [B, T2, T1, num_concepts]
         '''
         c = copy.deepcopy
 
@@ -589,16 +589,14 @@ class QAcombine(nn.Module):
 
         # alignment (can add external knowledge here)
         if qa_concept is not None:
-            hL = self.concept(qa_concept)
-
-            pdb.set_trace()
-
+            hL = self.concept(qa_concept) # [B, T1, T2, D]
         else:
             hL = None
         if aq_concept is not None:
-            hR = self.concept(aq_concept)
+            hR = self.concept(aq_concept) # [B, T2, T1, D]
         else:
             hR = None
+
         question_align = self.coattention(question, answer, answer, hL, hR, sharpening, amask) # [B, T, D]
         answer_align = self.coattention(answer, question, question, hR, hL, sharpening, qmask)
 
