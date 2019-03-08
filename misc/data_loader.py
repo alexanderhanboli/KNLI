@@ -9,6 +9,7 @@ import json
 import ntpath
 import sys
 from misc.utilities import read_json_file
+import pdb
 
 def build_mask(len_data, max_len):
 
@@ -29,12 +30,12 @@ class BatchDataLoader(Dataset):
      This supports any batch size.
     '''
     def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_q_len = 82, 
-                 max_ans_len = 44, emd_dim = 300, concept_dim = 3):
+                 max_ans_len = 62, emd_dim = 300, num_concepts = 5):
 
         self.embd_dict = embd_dict
         self.concept_dict = concept_dict
         self.emd_dim = emd_dim
-        self.concept_dim = concept_dim
+        self.num_concepts = num_concepts
         self.split = split
 
         # load in utterances
@@ -60,16 +61,19 @@ class BatchDataLoader(Dataset):
         query = self.data[idx]['premise_tokens']
         answer = self.data[idx]['hypothesis_tokens']
         label = self.class_dict[self.data[idx]['label']]
+        concept_qa = None
+        concept_aq = None
 
         # embedding vectors
         vecQ1 = np.zeros((self.max_q_len, self.emd_dim), dtype = np.float32)
         vecQ2 = np.zeros((self.max_ans_len, self.emd_dim), dtype = np.float32)
 
         # concept vectors
-        # q -> a
-        conceptQ1 = np.zeros((self.max_q_len, self.max_ans_len, self.concept_dim), dtype = np.float32) # [T1, T2, d]
-        # a -> q
-        conceptQ2 = np.zeros((self.max_ans_len, self.max_q_len, self.concept_dim), dtype = np.float32) # [T2, T1, d]
+        if self.concept_dict is not None:
+            # q -> a
+            concept_qa = np.zeros((self.max_q_len, self.max_ans_len, self.num_concepts), dtype = np.float32) # [T1, T2, d]
+            # a -> q
+            concept_aq = np.zeros((self.max_ans_len, self.max_q_len, self.num_concepts), dtype = np.float32) # [T2, T1, d]
 
         # process query (premise)
         for i, widx in enumerate(query):
@@ -84,8 +88,11 @@ class BatchDataLoader(Dataset):
                 if i == 0:
                     vecQ2[j,:] = self.embd_dict[widy] # get the word embedding for hypothesis
 
-                conceptQ1[i, j, :] = self.concept_dict[widx][widy]
-                conceptQ2[j, i, :] = self.concept_dict[widy][widx]
+                if self.concept_dict is not None:
+                    if widx in self.concept_dict and widy in self.concept_dict[widx]:
+                        concept_qa[i, j, :] = self.concept_dict[widx][widy]
+                    if widy in self.concept_dict and widx in self.concept_dict[widy]:
+                        concept_aq[j, i, :] = self.concept_dict[widy][widx]
 
         # create masks
         query_mask = build_mask(len(query), self.max_q_len)
@@ -93,8 +100,8 @@ class BatchDataLoader(Dataset):
 
         data  = {'q1':vecQ1,
                  'q2':vecQ2,
-                 'concept1':conceptQ1,
-                 'concept2':conceptQ2,
+                 'concept_qa':concept_qa,
+                 'concept_aq':concept_aq,
                  'qmask':query_mask,
                  'amask':answer_mask,
                  'label':label,

@@ -11,6 +11,7 @@ import time
 import math
 import argparse
 import json
+import pickle as pkl
 from itertools import compress
 from collections import OrderedDict
 from misc.utilities import timeSince, dump_to_json, create_dir, Preload_embedding, read_json_file
@@ -33,6 +34,8 @@ parser.add_argument('--fp_word_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_context',  default='')
 parser.add_argument('--fp_embd_type',  default='generic')
+parser.add_argument('--concept_dict', default='./data/sequence_and_features/pair_features_binary.pkl', type=str)
+parser.add_argument('--num_concepts', default=5, type=int)
 parser.add_argument('--bert_embd', default=False, action='store_true')
 parser.add_argument('--bert_layers', default=10, type=int)
 
@@ -66,7 +69,7 @@ parser.add_argument('--log_id', default='dummy123')
 parser.add_argument('--checkpoint_every', default=10, type=int)
 parser.add_argument('--seed_random', default=1019, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
-parser.add_argument('--model_name', default='QAsim')
+parser.add_argument('--model_name', default='QAcombine')
 parser.add_argument('--load_model', default=False, action='store_true')
 
 #
@@ -113,8 +116,10 @@ def train(data, use_mask = True):
         label: [B]
     '''
     model.train()
-    q1, a1, label = data['q1'], data['q2'], data['label']
+    q1, a1, label, concept_qa, concept_aq = data['q1'], data['q2'], data['label'], \
+                                            data['concept_qa'], data['concept_aq']
     q1, a1, label = Variable(q1), Variable(a1), Variable(label)
+    concept_qa, concept_aq = Variable(concept_qa), Variable(concept_aq)
 
     # setup the optim
     if args.opt == 'original':
@@ -127,9 +132,9 @@ def train(data, use_mask = True):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
 
     # calculate loss
     criterion = nn.CrossEntropyLoss()
@@ -152,8 +157,10 @@ def evaluate(data, use_mask = True, print_out = False):
     model.eval() # switch off the dropout if applied
 
     q1, a1, premise, hypothesis, label = data['q1'], data['q2'], data['qstr'], data['astr'], data['label']
+    concept_qa, concept_aq = data['concept_qa'], data['concept_aq']
     q1, a1, label = Variable(q1), Variable(a1), Variable(label)
-
+    concept_qa, concept_aq = Variable(concept_qa), Variable(concept_aq)
+    
     mem_size = q1.size()[1]
     b_size = q1.size()[0]
 
@@ -161,9 +168,9 @@ def evaluate(data, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
 
     # calculate word importance
     criterion = nn.CrossEntropyLoss()
@@ -232,7 +239,8 @@ if __name__ == "__main__":
     # Load data
     ############################
     enable_sampler = False
-
+    with open(args.concept_dict, 'rb') as f:
+        concept_dict = pkl.load(f)
     if args.bert_embd:
         dset_train = BatchDataLoaderBert(fpath = args.fp_train, split='train',
                                     emd_dim=args.fp_word_embd_dim, num_bert_layers=args.bert_layers)
@@ -245,11 +253,11 @@ if __name__ == "__main__":
         else:
             pre_embd = load_vectors(args.fp_embd)
 
-        dset_train = BatchDataLoader(fpath = args.fp_train, embd_dict = pre_embd,
-                                     split='train', emd_dim=args.fp_word_embd_dim)
+        dset_train = BatchDataLoader(fpath = args.fp_train, embd_dict = pre_embd, concept_dict=concept_dict,
+                                     split='train', emd_dim=args.fp_word_embd_dim, num_concepts = args.num_concepts)
 
-        dset_val   = BatchDataLoader(fpath = args.fp_val, embd_dict = pre_embd,
-                                    split='dev', emd_dim=args.fp_word_embd_dim)
+        dset_val   = BatchDataLoader(fpath = args.fp_val, embd_dict = pre_embd, concept_dict=concept_dict,
+                                    split='dev', emd_dim=args.fp_word_embd_dim, num_concepts = args.num_concepts)
 
     if enable_sampler == True:
         sampler = defineSampler(args.fp_train, neg_sampling_ratio = args.neg_sampling_ratio) # helps with imbalanced classes
@@ -315,7 +323,8 @@ if __name__ == "__main__":
                          num_layers = args.num_layers,
                          num_layers_cross = args.num_layers_cross,
                          heads = args.heads, embd_dim=args.fp_embd_dim,
-                         word_embd_dim=args.fp_word_embd_dim)
+                         word_embd_dim=args.fp_word_embd_dim,
+                         num_concepts=args.num_concepts)
 
     #########################
     # Check whether there is
