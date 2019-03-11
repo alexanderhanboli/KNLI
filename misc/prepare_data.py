@@ -60,7 +60,7 @@ def prepare_dataset(dataset):
 
 if __name__ == "__main__":
     
-    if not os.path.isfile('./data/snli_data.json'):
+    if not os.path.isfile('./data/snli/snli_data.json'):
         train_data = snli_dataset(train=True)
         dev_data = snli_dataset(dev=True)
         test_data = snli_dataset(test=True)

@@ -8,6 +8,8 @@ import os
 import math, copy, time
 from torch.autograd import Variable
 
+import pdb
+
 class NoamOpt:
     "Optim wrapper that implements rate."
     def __init__(self, model_size, factor, warmup, optimizer, decay = 0.5):
@@ -93,6 +95,40 @@ def attention(query, key, value, mask=None, dropout=None):
         p_attn = dropout(p_attn)
 
     return torch.matmul(p_attn, value), p_attn
+
+def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
+    '''
+     Compute concept augmented dot product
+     query: [B, T1, d_k]
+     key, value: [B, T2, d_k]
+     B is the batch size
+     T_{1,2} is the sentence length
+     d_k is the dimension of each word
+     hL: [B, T1, T2, d_k]
+     hR: [B, T2, T1, d_k]
+    '''
+    # (q_i + hL_{i,j}) * (k_j + hR_{j,i}) = q_i*k_j + q_i*hR_{j,i} + hL*k_j + hL_{i,j}*hR_{j,i}
+    b_size, T1, d_k = query.size()
+    _, T2, _ = key.size()
+
+    scores = torch.matmul(query, key.transpose(-2, -1)) \
+             / math.sqrt(d_k) # [B, H, T1, T2]
+
+    if mask is not None:
+        scores = scores.masked_fill(mask == 0, -1e9)
+    p_attn = F.softmax(scores, dim = -1) # [B, T1, T2]
+
+    # apply dropout
+    if dropout is not None:
+        p_attn = dropout(p_attn)
+
+    v = value.repeat(1, 1, T1).view(-1, T2, T1, d_k) + hR # [B, T2, T1, d_k]
+    v = v.transpose(1, 2) # [B, T1, T2, d_k]
+
+    p_attn_ = p_attn.repeat(1, 1, T1).view(-1, T1, T1, T2) # [B, T1, T1, T2]
+    query_align = torch.diagonal( torch.matmul(p_attn_, v), dim1=1, dim2=2 ).transpose(-2, -1) # [B, T1, d_k]
+
+    return query_align, p_attn
 
 """LayerNorm
 """
@@ -203,13 +239,11 @@ class MultiHeadedAttn(nn.Module):
 
 class SimAttn(nn.Module):
 
-    def __init__(self, heads=1, d_model=300, dropout=0.0):
+    def __init__(self, d_model=300, dropout=0.0):
         "Take in number of heads, model size, and dropout rate."
         super(SimAttn, self).__init__()
-        assert d_model % heads == 0
-        # We assume d_v always equals d_k
-        self.d_k = d_model // heads
-        self.heads = heads
+        
+        self.d_k = d_model
 
         ## Linear layers for multi-head attention
         self.fwQ  = nn.Linear(d_model, d_model) # for the query
@@ -218,16 +252,17 @@ class SimAttn(nn.Module):
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value, sharpening=True, mask=None):
+    def forward(self, query, key, value, hL, hR, sharpening=True, mask=None):
         '''
             query, key, value are B*T*D
             B: is batch size
             T: is sequence length
             D: is model dimension
+            hL: [B, T1, T2, d_k]
+            hR: [B, T2, T1, d_k]
         '''
         if mask is not None:
             mask = mask.unsqueeze(1) # [B, 1, T]
-            mask = mask.unsqueeze(1) # [B, 1, 1, T]
 
         batch_size = query.size(0)
 
@@ -235,22 +270,18 @@ class SimAttn(nn.Module):
         key   = self.fwK(key)
         # will not map values
 
-        query = query.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, T, H, dk]
-        key   = key.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
-        value = value.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
-
-        x, self.attn  = attention(query, key, value, mask=mask, dropout=self.dropout)
-        idx = torch.argmax(self.attn, dim=-1) # [B, 1, T]
-
+        if hL is not None and hR is not None:
+            x, self.attn  = concept_attention(query, key, value, hL, hR, mask=mask, dropout=self.dropout)
+            # x: [B, T1, d_k]
+        else:
+            x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+            
         # sharpening the attention distribution
         if sharpening:
             self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
-            x = torch.matmul(self.attn, value)
+            x = torch.diagonal( torch.matmul(self.attn_, value), dim1=1, dim2=2 ).transpose(-2, -1)
 
-        out = x.transpose(1, 2).contiguous() \
-             .view(batch_size, -1, self.heads * self.d_k) # [B, T, D]
-
-        return out, idx
+        return x
 
 class Highway(nn.Module):
     def __init__(self, h_size, h_out, num_layers=2):
@@ -276,6 +307,27 @@ class Highway(nn.Module):
 
         return self.fc(x)
 
+# class FixedPositionalEncoding(nn.Module):
+#     "Implement the PE function."
+#     def __init__(self, d_model, dropout, max_len=5000):
+#         super(FixedPositionalEncoding, self).__init__()
+#         self.dropout = nn.Dropout(p=dropout)
+#
+#         # Compute the positional encodings once in log space.
+#         pe = torch.zeros(max_len, d_model)
+#         position = torch.arange(0., max_len).unsqueeze(1)
+#         div_term = torch.exp(torch.arange(0., d_model, 2) *
+#                              -(math.log(10000.0) / d_model))
+#         pe[:, 0::2] = torch.sin(position * div_term)
+#         pe[:, 1::2] = torch.cos(position * div_term)
+#         pe = pe.unsqueeze(0)
+#         self.register_buffer('pe', pe)
+#
+#     def forward(self, x):
+#         x = x + Variable(self.pe[:, :x.size(1)],
+#                          requires_grad=False)
+#         return self.dropout(x)
+
 class PositionalEncoding(nn.Module):
     "Implement the PE function."
     def __init__(self, d_model, dropout, max_len=5000):
@@ -293,6 +345,17 @@ class PositionalEncoding(nn.Module):
         x = x + position_embeddings
         x = self.norm(x)
         return self.dropout(x)
+
+class ConceptEncoding(nn.Module):
+    "The concept encoding of hypernyms, hyponyms, and synonyms."
+    def __init__(self, d_model, num_concepts):
+        super(ConceptEncoding, self).__init__()
+        self.concept_embeddings = nn.Parameter(torch.zeros(num_concepts, d_model))
+        nn.init.normal_(self.concept_embeddings, 0.0, 0.02)
+    def forward(self, qa_relation):
+        "qa_relation: [B, T1, T2, num_concepts]"
+        return qa_relation.matmul(self.concept_embeddings) # [B, T1, T2, d_model]
+
 
 class Encoder(nn.Module):
     "Core encoder is a stack of N layers"
@@ -404,16 +467,17 @@ class Classifier(nn.Module):
 ##############################
 #### STEM model
 ##############################
-class QAcombine(nn.Module):
+class QAeasyconcept(nn.Module):
 
     def __init__(self, hidden_size = 512, drop_rate = 0.1,
-                 num_layers = 4, num_layers_cross = 2, heads = 4, embd_dim = 300, word_embd_dim = 300):
+                 num_layers = 4, num_layers_cross = 2, heads = 4,
+                 embd_dim = 300, word_embd_dim = 300, num_concepts = 5):
         '''
             Simple baseline model:
             This model use a simple summation of Fasttext word embeddings to represent each question in the pair.
             Need to make sure that embd_dim % heads == 0.
         '''
-        super(QAcombine, self).__init__()
+        super(QAeasyconcept, self).__init__()
         c = copy.deepcopy
         if word_embd_dim == None:
             word_embd_dim = embd_dim
@@ -425,9 +489,8 @@ class QAcombine(nn.Module):
         self.hidden_size = hidden_size
 
         # layers
-        # self.highway = Highway(h_size=word_embd_dim, h_out=embd_dim, num_layers=1)
-
-        self.coattention = SimAttn(heads=1, d_model=embd_dim, dropout=drop_rate)
+        self.concept = ConceptEncoding(d_model=embd_dim, num_concepts=num_concepts)
+        self.coattention = SimAttn(d_model=embd_dim, dropout=drop_rate)
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
 
@@ -491,7 +554,8 @@ class QAcombine(nn.Module):
             for p in module:
                 self.orthogonal_weights(p)
 
-    def forward(self, question, answer, qmask=None, amask=None, sharpening=False, thrd=0.10, alpha=0.00):
+    def forward(self, question, answer, qmask=None, amask=None, 
+                qa_concept=None, aq_concept=None, sharpening=False, thrd=0.10, alpha=0.00):
         '''
          input : batch, seq_len
                 qxlen [qx, lenx]
@@ -500,6 +564,8 @@ class QAcombine(nn.Module):
                 memory:   BxTxD
                 w1, w2: [B,T,D]
                 qlength: [B, 1]
+                qa_concept: [B, T1, T2, num_concepts]
+                aq_concept: [B, T2, T1, num_concepts]
         '''
         c = copy.deepcopy
 
@@ -510,10 +576,17 @@ class QAcombine(nn.Module):
         answer = self.encoder_a(answer, amask)
 
         # alignment (can add external knowledge here)
-        question_align, q_idx = self.coattention(question, answer, answer, sharpening, amask) # [B, T, D]
-        answer_align, a_idx = self.coattention(answer, question, question, sharpening, qmask)
-        
-        # TODO: add easy version concept embeddings
+        if qa_concept is not None:
+            hL = self.concept(qa_concept) # [B, T1, T2, D]
+        else:
+            hL = None
+        if aq_concept is not None:
+            hR = self.concept(aq_concept) # [B, T2, T1, D]
+        else:
+            hR = None
+
+        question_align = self.coattention(question, answer, answer, hL, hR, sharpening, amask) # [B, T, D]
+        answer_align = self.coattention(answer, question, question, hR, hL, sharpening, qmask)
 
         # concatenation (enrichment with the same orientation)
         question = torch.cat( (question, question_align, question-question_align, question.mul(question_align)), -1 )
