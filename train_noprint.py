@@ -22,8 +22,6 @@ import sys
 import datetime
 import pytz
 from sklearn import metrics
-import nltk
-nltk.download('punkt')
 
 parser = argparse.ArgumentParser()
 # Input data
