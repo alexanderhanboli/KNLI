@@ -41,6 +41,15 @@ def download_wordvecs(dirpath):
     url = 'http://www-nlp.stanford.edu/data/glove.840B.300d.zip'
     unzip(download(url, dirpath))
 
+def download_fasttext(dirpath):
+    if os.path.exists(dirpath):
+        print('Found Fasttext vectors - skip')
+        return
+    else:
+        os.makedirs(dirpath)
+    url = 'https://dl.fbaipublicfiles.com/fasttext/vectors-wiki/wiki.en.zip'
+    unzip(download(url, dirpath))
+
 def download_snli(dirpath):
     if os.path.exists(dirpath):
         print('Found SNLI dataset - skip')
@@ -71,11 +80,13 @@ def download_corenlp(dirpath):
 if __name__ == '__main__':
     base_dir = os.path.dirname(os.path.realpath(__file__))
     snli_dir = os.path.join(base_dir, 'snli')
+    fasttext_dir = os.path.join(base_dir, 'fasttext')
     wordvec_dir = os.path.join(base_dir, 'glove')
     wordnet_dir = os.path.join(base_dir, 'wordnet')
     corenlp_dir = os.path.join(base_dir, 'corenlp')
     download_snli(snli_dir)
     download_wordvecs(wordvec_dir)
+    download_fasttext(fasttext_dir)
     download_wordnet(wordnet_dir)
     download_corenlp(corenlp_dir)
 

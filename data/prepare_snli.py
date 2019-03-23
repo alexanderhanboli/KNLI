@@ -56,9 +56,9 @@ def prepare_dataset(dataset, tokenizer):
         
     return count_E, count_C, count_N, l_E, l_C, l_N, output
 
-tr_e, tr_c, tr_n, tr_le, tr_lc, tr_ln, train_data = prepare_dataset('./data/snli/snli_1.0/snli_1.0_train.jsonl', nlp)
-dev_e, dev_c, dev_n, dev_le, dev_lc, dev_ln, dev_data = prepare_dataset('./data/snli/snli_1.0/snli_1.0_dev.jsonl', nlp)
-test_e, test_c, test_n, test_le, test_lc, test_ln, test_data = prepare_dataset('./data/snli/snli_1.0/snli_1.0_test.jsonl', nlp)
+tr_e, tr_c, tr_n, tr_le, tr_lc, tr_ln, train_data = prepare_dataset('../snli/snli_1.0/snli_1.0_train.jsonl', nlp)
+dev_e, dev_c, dev_n, dev_le, dev_lc, dev_ln, dev_data = prepare_dataset('../snli/snli_1.0/snli_1.0_dev.jsonl', nlp)
+test_e, test_c, test_n, test_le, test_lc, test_ln, test_data = prepare_dataset('../snli/snli_1.0/snli_1.0_test.jsonl', nlp)
 
 data = {'train': list(train_data), 'dev': list(dev_data), 'test': list(test_data), 
         'n_entail': {'train': tr_e, 'dev':dev_e, 'test':test_e},

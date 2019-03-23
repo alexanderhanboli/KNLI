@@ -84,7 +84,7 @@ if __name__ == "__main__":
         opt['opt'] = choice(['openai', 'bert'])
         opt['l2']  = choice([0.01])
         opt['hidden_size']  = choice([512])
-        opt['heads'] = choice([5, 6]) # divisible for 300
+        opt['heads'] = choice([4, 5, 6]) # divisible for 300
         opt['droprate'] =  choice([0.10])
         opt['num_layers'] = choice([1, 2, 4, 6])
         opt['num_layers_cross'] = opt['num_layers']
