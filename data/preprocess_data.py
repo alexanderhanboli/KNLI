@@ -393,10 +393,10 @@ if __name__ == '__main__':
         for k, v in w_w_features.items():
             f.write(k + ' ' + ' '.join(map(str,v.tolist())) + '\n')
 
-    print('4. obtain train/dev/test dataset\n')
-    build_sequence(os.path.join(snli_dir, 'snli_1.0_dev.txt'), dst_dir)
-    build_sequence(os.path.join(snli_dir, 'snli_1.0_test.txt'), dst_dir)
-    build_sequence(os.path.join(snli_dir, 'snli_1.0_train.txt'), dst_dir)
+    # print('4. obtain train/dev/test dataset\n')
+    # build_sequence(os.path.join(snli_dir, 'snli_1.0_dev.txt'), dst_dir)
+    # build_sequence(os.path.join(snli_dir, 'snli_1.0_test.txt'), dst_dir)
+    # build_sequence(os.path.join(snli_dir, 'snli_1.0_train.txt'), dst_dir)
 
     # print('5. obtain lemma format for train/dev/test dataset\n')
     # CoreNLP(os.path.join(dst_dir, 'premise_snli_1.0_train.txt'))

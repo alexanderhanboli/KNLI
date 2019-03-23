@@ -65,7 +65,7 @@ parser.add_argument('--n_epochs', default=50, type=int)
 parser.add_argument('--check_point_dir', default='./check_points/')
 parser.add_argument('--log_id', default='dummy123')
 parser.add_argument('--checkpoint_every', default=10, type=int)
-parser.add_argument('--seed_random', default=1019, type=int)
+parser.add_argument('--seed_random', default=12345, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
 parser.add_argument('--model_name', default='QAconcept')
 parser.add_argument('--load_model', default=False, action='store_true')
@@ -142,8 +142,7 @@ def train(data, use_mask = True):
     loss.backward()
     optimizer.step()
 
-    # not critical, but just in case
-    del q1, a1, label
+    del q1, a1, label, concept_qa, concept_aq
 
     return loss.data.item()
 
@@ -195,7 +194,7 @@ def evaluate(data, use_mask = True, print_out = False):
         print('\r-----------------------------------------------------------\n')
 
     # not critical, but just in case
-    del q1, a1, premise, hypothesis, label
+    del q1, a1, premise, hypothesis, label, concept_qa, concept_aq
 
     return loss_eval.data.item(), correct, f1, precision, recall, b_size
 
@@ -220,9 +219,9 @@ if __name__ == "__main__":
     USE_CUDA = torch.cuda.is_available()
 
     if USE_CUDA:
-        print("Yayy we use CUDA {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
+        print("We are using CUDA {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
     else:
-        print("No cuda detected")
+        print("No CUDA detected")
 
     torch.manual_seed(args.seed_random)
     np.random.seed(args.seed_random)

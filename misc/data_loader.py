@@ -11,6 +11,8 @@ import sys
 from misc.utilities import read_json_file
 import pdb
 
+CLASS_DICT = {'entailment':0, 'neutral':1, 'contradiction':2}
+
 def build_mask(len_data, max_len):
 
 
@@ -29,8 +31,8 @@ class BatchDataLoader(Dataset):
      This data loader loads data.
      This supports any batch size.
     '''
-    def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_q_len = 82, 
-                 max_ans_len = 62, emd_dim = 300, num_concepts = 5):
+    def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_q_len = 83, 
+                 max_ans_len = 66, emd_dim = 300, num_concepts = 5):
 
         self.embd_dict = embd_dict
         self.concept_dict = concept_dict
@@ -45,7 +47,7 @@ class BatchDataLoader(Dataset):
         self.max_q_len = max_q_len
         self.max_ans_len = max_ans_len
 
-        self.class_dict = {'entailment':0, 'neutral':1, 'contradiction':2}
+        self.class_dict = CLASS_DICT
 
         print("Done with loading data for %s split containing " % (self.split))
         print("Total: %d samples" % (self.N ))
