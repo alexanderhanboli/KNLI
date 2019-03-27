@@ -482,7 +482,7 @@ class Classifier(nn.Module):
         super(Classifier, self).__init__()
 
         self.dropout = nn.Dropout(dropout)
-        self.simf = nn.Linear(hidden_size, 3),
+        self.simf = nn.Linear(hidden_size, 3)
         
     def forward(self, input):
         '''
@@ -543,14 +543,14 @@ class QAconcept(nn.Module):
         self.weight_q = nn.Linear(hidden_size, 1)
         self.weight_a = nn.Linear(hidden_size, 1)
 
-        self.proj = nn.Linear(4*embd_dim, hidden_size, bias=False)
+        self.proj = nn.Linear(4*embd_dim, hidden_size)
 
         self.classifier = Classifier(hidden_size=hidden_size, dropout=drop_rate)
 
         # initialize weights
         self.apply(self.initialize_weights)
-        # self.proj_q.apply(self.orthogonal_weights)
-        # self.proj_a.apply(self.orthogonal_weights)
+        self.proj_q.apply(self.orthogonal_weights)
+        self.proj_a.apply(self.orthogonal_weights)
         self.proj.apply(self.orthogonal_weights)
 
     def initialize_weights(self, module):
@@ -623,8 +623,8 @@ class QAconcept(nn.Module):
         answer = torch.cat( (answer, answer_align, answer-answer_align, answer.mul(answer_align)), -1 ) # [B, T, 4*D]
 
         # project to lower dim
-        question = self.proj_q(self.drop(gelu(self.pre_q(question))))
-        answer = self.proj_a(self.drop(gelu(self.pre_a(answer))))
+        question = self.proj_q(self.drop(self.pre_q(question)))
+        answer = self.proj_a(self.drop(self.pre_a(answer)))
 
         # self-attention again
         question = self.encoder_qq(question, qmask) # encode with self-attention # [B, T, D]
