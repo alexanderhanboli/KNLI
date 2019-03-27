@@ -161,7 +161,7 @@ def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
 # except ImportError:
 # print("Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex.")
 class LayerNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-12):
+    def __init__(self, hidden_size, eps=1e-5):
         """Construct a layernorm module in the TF style (epsilon inside the square root).
         """
         super(LayerNorm, self).__init__()
@@ -271,7 +271,7 @@ class SimAttn(nn.Module):
 
         ## Linear layers for multi-head attention
         self.fwQ  = nn.Linear(d_model, d_model) # for the query
-        self.fwK  = nn.Linear(d_model, d_model) # for the key
+        self.fwK  = nn.Linear(d_model, d_model) # for the key and value
 
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
@@ -292,7 +292,7 @@ class SimAttn(nn.Module):
 
         query = self.fwQ(query) # [B, T, D]
         key   = self.fwK(key)
-        # will not map values
+        value = self.fwK(value)
 
         if hL is not None and hR is not None:
             x, self.attn  = concept_attention(query, key, value, hL, hR, mask=mask, dropout=self.dropout)
@@ -477,21 +477,18 @@ class CrEncoderLayer(nn.Module):
         return x
 
 class Classifier(nn.Module):
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_size, dropout):
 
         super(Classifier, self).__init__()
 
-        self.simf = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, 3),
-        )
-
+        self.dropout = nn.Dropout(dropout)
+        self.simf = nn.Linear(hidden_size, 3),
+        
     def forward(self, input):
         '''
         x: [B, T, D]
         '''
-        score = self.simf(input) # [B, 3]
+        score = self.simf(self.dropout(input)) # [B, 3]
 
         return score
 
@@ -525,8 +522,10 @@ class QAconcept(nn.Module):
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
 
-        self.proj_q = nn.Linear(4*embd_dim, embd_dim, bias=False)
-        self.proj_a = nn.Linear(4*embd_dim, embd_dim, bias=False)
+        self.pre_q = nn.Linear(4*embd_dim, 4*embd_dim)
+        self.pre_a = nn.Linear(4*embd_dim, 4*embd_dim)
+        self.proj_q = nn.Linear(4*embd_dim, embd_dim)
+        self.proj_a = nn.Linear(4*embd_dim, embd_dim)
 
 
         attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
@@ -546,12 +545,12 @@ class QAconcept(nn.Module):
 
         self.proj = nn.Linear(4*embd_dim, hidden_size, bias=False)
 
-        self.classifier = Classifier(hidden_size=hidden_size)
+        self.classifier = Classifier(hidden_size=hidden_size, dropout=drop_rate)
 
         # initialize weights
         self.apply(self.initialize_weights)
-        self.proj_q.apply(self.orthogonal_weights)
-        self.proj_a.apply(self.orthogonal_weights)
+        # self.proj_q.apply(self.orthogonal_weights)
+        # self.proj_a.apply(self.orthogonal_weights)
         self.proj.apply(self.orthogonal_weights)
 
     def initialize_weights(self, module):
@@ -624,16 +623,16 @@ class QAconcept(nn.Module):
         answer = torch.cat( (answer, answer_align, answer-answer_align, answer.mul(answer_align)), -1 ) # [B, T, 4*D]
 
         # project to lower dim
-        question = self.proj_q(question)
-        answer = self.proj_a(answer)
+        question = self.proj_q(self.drop(gelu(self.pre_q(question))))
+        answer = self.proj_a(self.drop(gelu(self.pre_a(answer))))
 
         # self-attention again
         question = self.encoder_qq(question, qmask) # encode with self-attention # [B, T, D]
         answer = self.encoder_aa(answer, amask)
 
         # predict word importance
-        q_uweight = self.weight_q(gelu(self.fc_q(question))) # [B, T, 1]
-        a_uweight = self.weight_a(gelu(self.fc_a(answer)))
+        q_uweight = self.weight_q(self.drop(gelu(self.fc_q(question)))) # [B, T, 1]
+        a_uweight = self.weight_a(self.drop(gelu(self.fc_a(answer))))
         if qmask is not None:
             q_weight = F.softmax(q_uweight.masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 1]
         else:
