@@ -65,7 +65,7 @@ parser.add_argument('--n_epochs', default=50, type=int)
 parser.add_argument('--check_point_dir', default='./check_points/')
 parser.add_argument('--log_id', default='dummy123')
 parser.add_argument('--checkpoint_every', default=10, type=int)
-parser.add_argument('--seed_random', default=12345, type=int)
+parser.add_argument('--seed_random', default=42, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
 parser.add_argument('--model_name', default='QAconcept')
 parser.add_argument('--description', default='', type=str)
@@ -357,7 +357,9 @@ if __name__ == "__main__":
 
     elif args.opt == 'openai':
         from misc.openai_optimization import OpenAIAdam
+
         n_updates_total = len(train_loader) * args.n_epochs
+
         optimizer = OpenAIAdam(filter(lambda p: p.requires_grad, model.parameters()),
                                lr=args.lr,
                                schedule=args.lr_schedule,
@@ -372,7 +374,9 @@ if __name__ == "__main__":
 
     elif args.opt == 'bert':
         from misc.bert_optimization import BertAdam
+
         n_updates_total = len(train_loader) * args.n_epochs
+        
         optimizer = BertAdam(filter(lambda p: p.requires_grad, model.parameters()),
                                lr=args.lr,
                                warmup=args.lr_warmup,

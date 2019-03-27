@@ -312,29 +312,29 @@ class SimAttn(nn.Module):
 
         return x
 
-class Highway(nn.Module):
-    def __init__(self, h_size, h_out, num_layers=2):
+# class Highway(nn.Module):
+#     def __init__(self, h_size, h_out, num_layers=2):
 
-        super(Highway, self).__init__()
-        self.num_layers = num_layers
+#         super(Highway, self).__init__()
+#         self.num_layers = num_layers
 
-        self.linear = nn.ModuleList([nn.Linear(h_size, h_size) for _ in range(self.num_layers)])
-        self.gate = nn.ModuleList([nn.Linear(h_size, h_size) for _ in range(self.num_layers)])
-        self.fc = nn.Linear(h_size, h_out)
+#         self.linear = nn.ModuleList([nn.Linear(h_size, h_size) for _ in range(self.num_layers)])
+#         self.gate = nn.ModuleList([nn.Linear(h_size, h_size) for _ in range(self.num_layers)])
+#         self.fc = nn.Linear(h_size, h_out)
 
-    def forward(self, x):
-        '''
-            Input x is B*T*D
-            y = H(x,WH)· T(x,WT) + x · (1 − T(x,WT)).
-        '''
-        for i in range(self.num_layers):
+#     def forward(self, x):
+#         '''
+#             Input x is B*T*D
+#             y = H(x,WH)· T(x,WT) + x · (1 − T(x,WT)).
+#         '''
+#         for i in range(self.num_layers):
 
-            H = gelu(self.linear[i](x))
-            T = F.sigmoid(self.gate[i](x))
+#             H = gelu(self.linear[i](x))
+#             T = F.sigmoid(self.gate[i](x))
 
-            x = T * H + (1 - T) * x
+#             x = T * H + (1 - T) * x
 
-        return self.fc(x)
+#         return self.fc(x)
 
 # class FixedPositionalEncoding(nn.Module):
 #     "Implement the PE function."
