@@ -88,6 +88,7 @@ if __name__ == "__main__":
             continue
 
         model_type = j.split('_')[0]
+        model_description = j.split('_')[1]
 
         if args.model_name != '' and model_type != args.model_name:
             continue

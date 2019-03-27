@@ -27,10 +27,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--fp_test', default='./data/snli/snli_data.json')
 
 #
-parser.add_argument('--model_name', default='QAcombine', type=str)
+parser.add_argument('--model_name', default='QAconcept', type=str)
 
 #others
-parser.add_argument('--best_model', default='./mfiles/qaconcept_0076410_B16_L4_H5_D1_March-11-2019-08:51AM__best.pt')
+parser.add_argument('--best_model', default='./mfiles/qaconcept_1305447_B32_L2_H4_D1_March-23-2019-09:52PM__best.pt')
 parser.add_argument('--loader_num_workers', type=int, default=4)
 parser.add_argument('--batch_size',  type=int, default=16)
 
@@ -104,7 +104,7 @@ if __name__ == "__main__":
 
     USE_CUDA =  torch.cuda.is_available()
     if USE_CUDA:
-        print("Yayy we use CUDA {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
+        print("We are using CUDA {}".format(os.environ["CUDA_VISIBLE_DEVICES"]))
     else:
         print("No cuda detected")
     args = parser.parse_args()
@@ -126,13 +126,14 @@ if __name__ == "__main__":
 
     word_embd_dim =  params.fp_word_embd_dim
 
-    import models.QAcombine as net
-    model = net.QAconcept(hidden_size = params.hidden_size, drop_rate = params.droprate,
-                         num_layers = params.num_layers,
-                         num_layers_cross = params.num_layers_cross,
-                         heads = params.heads, embd_dim=params.fp_embd_dim,
-                         word_embd_dim=params.fp_word_embd_dim,
-                         num_concepts=params.num_concepts)
+    if args.model_name == 'QAcombine' or args.model_name == 'QAconcept':
+        import models.QAcombine as net
+        model = net.QAconcept(hidden_size = params.hidden_size, drop_rate = params.droprate,
+                             num_layers = params.num_layers,
+                             num_layers_cross = params.num_layers_cross,
+                             heads = params.heads, embd_dim=params.fp_embd_dim,
+                             word_embd_dim=params.fp_word_embd_dim,
+                             num_concepts=params.num_concepts)
 
 
     print("loading the model %s...." % args.best_model)

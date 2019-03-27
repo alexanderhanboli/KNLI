@@ -107,24 +107,34 @@ def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
      hL: [B, T1, T2, d_k]
      hR: [B, T2, T1, d_k]
     '''
-    # (q_i + hL_{i,j}) * (k_j + hR_{j,i}) = q_i*k_j + q_i*hR_{j,i} + hL*k_j + hL_{i,j}*hR_{j,i}
     b_size, T1, d_k = query.size()
     _, T2, _ = key.size()
-    # q_i * k_j
-    q_k = torch.matmul(query, key.transpose(-2, -1)) \
-             / math.sqrt(d_k) # [B, T1, T2]
-    # q_i * hR_{j,i}
-    q = query.repeat(1, 1, T1).view(-1, T1, T1, d_k)
-    q_hR = torch.diagonal( torch.matmul(q, hR.transpose(1, 2).transpose(-2, -1)), dim1=1, dim2=2 ).transpose(-2, -1) # [B, T1, T2]
-    # hL_{i,j} * k_j
-    k = key.repeat(1, 1, T2).view(-1, T2, T2, d_k)
-    hL_k = torch.diagonal( torch.matmul(k, hL.transpose(1, 2).transpose(-2, -1)), dim1=1, dim2=2 ) # [B, T1, T2]
-    # hL * hR
-    hL_ = hL.view(-1, T1*T2, d_k)
-    hR_ = hR.view(-1, T1*T2, d_k)
-    hL_hR = torch.diagonal( torch.matmul(hL_, hR_.transpose(-2, -1)), dim1=1, dim2=2 ).view(-1, T1, T2) # [B, T1, T2]
-    # final score
-    scores = q_k + q_hR + hL_k + hL_hR
+
+    # # implementation 1: decomposed
+    # # (q_i + hL_{i,j}) * (k_j + hR_{j,i}) = q_i*k_j + q_i*hR_{j,i} + hL*k_j + hL_{i,j}*hR_{j,i}
+    # # q_i * k_j
+    # q_k = torch.matmul(query, key.transpose(-2, -1)) \
+    #          / math.sqrt(d_k) # [B, T1, T2]
+    # # q_i * hR_{j,i}
+    # q = query.repeat(1, 1, T1).view(-1, T1, T1, d_k)
+    # q_hR = torch.diagonal( torch.matmul(q, hR.permute(0,2,3,1)), dim1=1, dim2=2 ).transpose(-2, -1) # [B, T1, T2]
+    # # hL_{i,j} * k_j
+    # k = key.repeat(1, 1, T2).view(-1, T2, T2, d_k)
+    # hL_k = torch.diagonal( torch.matmul(k, hL.transpose(1, 2).transpose(-2, -1)), dim1=1, dim2=2 ) # [B, T1, T2]
+    # # hL * hR
+    # hL_ = hL.view(-1, T1*T2, d_k)
+    # hR_ = hR.view(-1, T1*T2, d_k)
+    # hL_hR = torch.diagonal( torch.matmul(hL_, hR_.transpose(-2, -1)), dim1=1, dim2=2 ).view(-1, T1, T2) # [B, T1, T2]
+    # # final score
+    # scores = q_k + q_hR + hL_k + hL_hR
+
+    # implementation 2: direct addition
+    # (q + hL) * (k + hR)
+    q = query.unsqueeze(2) # [B, T1, 1, d_k]
+    q_plus_hL = q + hL # [B, T1, T2, d_k]
+    k = key.unsqueeze(2) # [B, T2, 1, d_k]
+    k_plus_hR = (k + hR).transpose(1, 2) # [B, T1, T2, d_k]
+    scores = torch.sum(q_plus_hL * k_plus_hR, dim=-1, keepdim=False) # [B, T1, T2]
 
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
@@ -134,20 +144,22 @@ def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
     if dropout is not None:
         p_attn = dropout(p_attn)
 
-    v = value.repeat(1, 1, T1).view(-1, T2, T1, d_k) + hR # [B, T2, T1, d_k]
+    # calculate aligned vectors
+    v = value.unsqueeze(2) + hR # [B, T2, T1, d_k]
     v = v.transpose(1, 2) # [B, T1, T2, d_k]
 
-    p_attn_ = p_attn.repeat(1, 1, T1).view(-1, T1, T1, T2) # [B, T1, T1, T2]
-    query_align = torch.diagonal( torch.matmul(p_attn_, v), dim1=1, dim2=2 ).transpose(-2, -1) # [B, T1, d_k]
+    p_attn = p_attn.unsqueeze(3) # [B, T1, T2, 1]
 
-    return query_align, p_attn
+    query_align = torch.sum(p_attn * v, dim=2, keepdim=False) # [B, T1, d_k]
+
+    return query_align, p_attn.squeeze(-1)
 
 """LayerNorm
 """
 # try:
 #     from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 # except ImportError:
-print("Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex.")
+# print("Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex.")
 class LayerNorm(nn.Module):
     def __init__(self, hidden_size, eps=1e-12):
         """Construct a layernorm module in the TF style (epsilon inside the square root).
@@ -285,13 +297,18 @@ class SimAttn(nn.Module):
         if hL is not None and hR is not None:
             x, self.attn  = concept_attention(query, key, value, hL, hR, mask=mask, dropout=self.dropout)
             # x: [B, T1, d_k]
+            # sharpening the attention distribution
+            if sharpening:
+                self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
+                v = value.unsqueeze(2) + hR # [B, T2, T1, d_k]
+                v = v.transpose(1, 2) # [B, T1, T2, d_k]
+                x = torch.sum(self.attn.unsqueeze(3) * v, dim=2, keepdim=False) # [B, T1, d_k]
         else:
             x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
-            
-        # sharpening the attention distribution
-        if sharpening:
-            self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
-            x = torch.diagonal( torch.matmul(self.attn_, value), dim1=1, dim2=2 ).transpose(-2, -1)
+            # sharpening the attention distribution
+            if sharpening:
+                self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
+                x = torch.matmul(self.attn, value) # [B, T1, d_k]
 
         return x
 
@@ -364,6 +381,8 @@ class ConceptEncoding(nn.Module):
         super(ConceptEncoding, self).__init__()
         self.concept_embeddings = nn.Parameter(torch.zeros(num_concepts, d_model))
         nn.init.normal_(self.concept_embeddings, 0.0, 0.02)
+    def _get_embedding(self):
+        return self.concept_embeddings
     def forward(self, qa_relation):
         "qa_relation: [B, T1, T2, num_concepts]"
         return qa_relation.matmul(self.concept_embeddings) # [B, T1, T2, d_model]
@@ -625,10 +644,10 @@ class QAconcept(nn.Module):
             a_weight = F.softmax(a_uweight, dim=1) # [B, T, 1]
 
         # pooling
-        q_ave = torch.sum( q_weight.mul(question), dim=1 ).squeeze(1) # [B, D]
+        q_ave = torch.sum( q_weight.mul(question), dim=1, keepdim=False ) # [B, D]
         q_max = torch.max( question, dim=1 )[0].squeeze(1) # [B, D]
-        a_ave = torch.sum( a_weight.mul(answer), dim=1 ).squeeze(1) # [B, D]
-        a_max = torch.max( answer, dim=1 )[0].squeeze(1)
+        a_ave = torch.sum( a_weight.mul(answer), dim=1, keepdim=False ) # [B, D]
+        a_max = torch.max( answer, dim=1 )[0].squeeze(1) # [B, D]
 
         final = torch.cat( (q_ave, q_max, a_ave, a_max), -1 ) # [B, 4*D]
         final = self.proj(final) # [B, hidden_size]

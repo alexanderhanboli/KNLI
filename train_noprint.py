@@ -68,6 +68,7 @@ parser.add_argument('--checkpoint_every', default=10, type=int)
 parser.add_argument('--seed_random', default=12345, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
 parser.add_argument('--model_name', default='QAconcept')
+parser.add_argument('--description', default='', type=str)
 parser.add_argument('--load_model', default=False, action='store_true')
 
 #
@@ -94,8 +95,8 @@ def createFileName(args):
     # create folder if not there
     create_dir(args.check_point_dir)
 
-    return os.path.join(args.check_point_dir, str.lower(args.model_name) + "_" + args.log_id +
-                        '_B' + str(args.batch_size) + '_L' + str(args.num_layers) +
+    return os.path.join(args.check_point_dir, str.lower(args.model_name) + "_" + str.lower(args.description) + "_" + 
+                        args.log_id + '_B' + str(args.batch_size) + '_L' + str(args.num_layers) +
                         '_H' + str(args.heads) + '_D' + str(args.droprate-int(args.droprate))[1:][1])
 
 def load_vectors(fname):
@@ -210,7 +211,7 @@ if __name__ == "__main__":
         print("Using BERT embeddings...")
         assert args.fp_word_embd_dim == 768
     else:
-        print("Using fastext embeddings...")
+        print("Using {} embeddings...".format(args.fp_embd))
         assert args.fp_word_embd_dim == 300
 
     if args.cudnn_enabled == 1:

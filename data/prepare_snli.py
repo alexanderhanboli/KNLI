@@ -10,6 +10,8 @@ nlp = English()
 
 from tqdm import tqdm
 
+CLASS_DICT = {'entailment':0, 'neutral':1, 'contradiction':2}
+
 def prepare_dataset(dataset, tokenizer):
     
     output = []
@@ -30,12 +32,15 @@ def prepare_dataset(dataset, tokenizer):
             hypothesis = t['sentence2']
             premise_tokens = [w.text for w in tokenizer(premise)]
             hypothesis_tokens = [w.text for w in tokenizer(hypothesis)]
+            premise_lemmas = [w.lemma_ for w in tokenizer(premise)]
+            hypothesis_lemmas = [w.lemma_ for w in tokenizer(hypothesis)]
 
             tmp['premise'] = premise
             tmp['hypothesis'] = hypothesis
             tmp['premise_tokens'] = premise_tokens
             tmp['hypothesis_tokens'] = hypothesis_tokens
-            tmp['label'] = t['gold_label']
+            tmp['premise_lemmas'] = premise_lemmas
+            tmp['hypothesis_lemmas'] = hypothesis_lemmas
             
             if t['gold_label'] == 'neutral':
                 count_N += 1
@@ -52,13 +57,15 @@ def prepare_dataset(dataset, tokenizer):
             else:
                 continue
 
+            tmp['label'] = CLASS_DICT[t['gold_label']]
+
             output.append(tmp)
         
     return count_E, count_C, count_N, l_E, l_C, l_N, output
 
-tr_e, tr_c, tr_n, tr_le, tr_lc, tr_ln, train_data = prepare_dataset('../snli/snli_1.0/snli_1.0_train.jsonl', nlp)
-dev_e, dev_c, dev_n, dev_le, dev_lc, dev_ln, dev_data = prepare_dataset('../snli/snli_1.0/snli_1.0_dev.jsonl', nlp)
-test_e, test_c, test_n, test_le, test_lc, test_ln, test_data = prepare_dataset('../snli/snli_1.0/snli_1.0_test.jsonl', nlp)
+tr_e, tr_c, tr_n, tr_le, tr_lc, tr_ln, train_data = prepare_dataset('./snli/snli_1.0/snli_1.0_train.jsonl', nlp)
+dev_e, dev_c, dev_n, dev_le, dev_lc, dev_ln, dev_data = prepare_dataset('./snli/snli_1.0/snli_1.0_dev.jsonl', nlp)
+test_e, test_c, test_n, test_le, test_lc, test_ln, test_data = prepare_dataset('./snli/snli_1.0/snli_1.0_test.jsonl', nlp)
 
 data = {'train': list(train_data), 'dev': list(dev_data), 'test': list(test_data), 
         'n_entail': {'train': tr_e, 'dev':dev_e, 'test':test_e},
@@ -70,7 +77,7 @@ data = {'train': list(train_data), 'dev': list(dev_data), 'test': list(test_data
         'split_size': {'train':tr_e + tr_c + tr_n, 'dev':dev_e+dev_c+dev_n, 'test':test_e+test_c+test_n}}
 
 print("Saving the data...\n")
-with open(os.path.join('data/snli', 'snli_data.json'), 'w') as outfile:
+with open(os.path.join('./snli', 'snli_data.json'), 'w+') as outfile:
     json.dump(data, outfile)
 
 # print out some statistics

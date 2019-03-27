@@ -11,8 +11,6 @@ import sys
 from misc.utilities import read_json_file
 import pdb
 
-CLASS_DICT = {'entailment':0, 'neutral':1, 'contradiction':2}
-
 def build_mask(len_data, max_len):
 
 
@@ -31,8 +29,8 @@ class BatchDataLoader(Dataset):
      This data loader loads data.
      This supports any batch size.
     '''
-    def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_q_len = 83, 
-                 max_ans_len = 66, emd_dim = 300, num_concepts = 5):
+    def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_q_len = 90, 
+                 max_ans_len = 70, emd_dim = 300, num_concepts = 5):
 
         self.embd_dict = embd_dict
         self.concept_dict = concept_dict
@@ -47,13 +45,11 @@ class BatchDataLoader(Dataset):
         self.max_q_len = max_q_len
         self.max_ans_len = max_ans_len
 
-        self.class_dict = CLASS_DICT
-
         print("Done with loading data for %s split containing " % (self.split))
         print("Total: %d samples" % (self.N ))
-        print("Entailment: %d" % (everything['n_entail'][split]))
-        print("Neutral: %d" % (everything['n_neutral'][split]))
-        print("Contradiction: %d" % (everything['n_contradiction'][split]))
+        # print("Entailment: %d" % (everything['n_entail'][split]))
+        # print("Neutral: %d" % (everything['n_neutral'][split]))
+        # print("Contradiction: %d" % (everything['n_contradiction'][split]))
         print('-' * 50)
 
     def __getitem__(self, idx):
@@ -62,7 +58,9 @@ class BatchDataLoader(Dataset):
         hypothesis = self.data[idx]['hypothesis']
         query = self.data[idx]['premise_tokens']
         answer = self.data[idx]['hypothesis_tokens']
-        label = self.class_dict[self.data[idx]['label']]
+        query_lemma = self.data[idx]['premise_lemmas']
+        answer_lemma = self.data[idx]['hypothesis_lemmas']
+        label = int(self.data[idx]['label'])
         concept_qa = None
         concept_aq = None
 
@@ -81,20 +79,27 @@ class BatchDataLoader(Dataset):
         for i, widx in enumerate(query):
             if i >= self.max_q_len:
                 break
-            vecQ1[i,:] = self.embd_dict[widx] # get the word embedding for premise
+
+            try:
+                vecQ1[i,:] = self.embd_dict[widx] # get the word embedding for premise
+            except:
+                pass
 
             for j, widy in enumerate(answer):
                 if j >= self.max_ans_len:
                     break
 
                 if i == 0:
-                    vecQ2[j,:] = self.embd_dict[widy] # get the word embedding for hypothesis
-
+                    try:
+                        vecQ2[j,:] = self.embd_dict[widy] # get the word embedding for hypothesis
+                    except:
+                        pass
+                        
                 if self.concept_dict is not None:
-                    if widx in self.concept_dict and widy in self.concept_dict[widx]:
-                        concept_qa[i, j, :] = self.concept_dict[widx][widy]
-                    if widy in self.concept_dict and widx in self.concept_dict[widy]:
-                        concept_aq[j, i, :] = self.concept_dict[widy][widx]
+                    if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
+                        concept_qa[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
+                    if answer_lemma[j] in self.concept_dict and query_lemma[i] in self.concept_dict[answer_lemma[j]]:
+                        concept_aq[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]]
 
         # create masks
         query_mask = build_mask(len(query), self.max_q_len)
