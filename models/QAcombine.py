@@ -134,7 +134,7 @@ def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
     q_plus_hL = q + hL # [B, T1, T2, d_k]
     k = key.unsqueeze(2) # [B, T2, 1, d_k]
     k_plus_hR = (k + hR).transpose(1, 2) # [B, T1, T2, d_k]
-    scores = torch.sum(q_plus_hL * k_plus_hR, dim=-1, keepdim=False) # [B, T1, T2]
+    scores = torch.sum(q_plus_hL * k_plus_hR, dim=-1, keepdim=False) / math.sqrt(d_k)# [B, T1, T2]
 
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
