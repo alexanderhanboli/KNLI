@@ -134,7 +134,7 @@ def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
     q_plus_hL = q + hL # [B, T1, T2, d_k]
     k = key.unsqueeze(2) # [B, T2, 1, d_k]
     k_plus_hR = (k + hR).transpose(1, 2) # [B, T1, T2, d_k]
-    scores = torch.sum(q_plus_hL * k_plus_hR, dim=-1, keepdim=False) # [B, T1, T2]
+    scores = torch.sum(q_plus_hL * k_plus_hR, dim=-1, keepdim=False) / math.sqrt(d_k)# [B, T1, T2]
 
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
@@ -161,7 +161,7 @@ def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
 # except ImportError:
 # print("Better speed can be achieved with apex installed from https://www.github.com/nvidia/apex.")
 class LayerNorm(nn.Module):
-    def __init__(self, hidden_size, eps=1e-12):
+    def __init__(self, hidden_size, eps=1e-5):
         """Construct a layernorm module in the TF style (epsilon inside the square root).
         """
         super(LayerNorm, self).__init__()
@@ -271,7 +271,7 @@ class SimAttn(nn.Module):
 
         ## Linear layers for multi-head attention
         self.fwQ  = nn.Linear(d_model, d_model) # for the query
-        self.fwK  = nn.Linear(d_model, d_model) # for the key
+        self.fwK  = nn.Linear(d_model, d_model) # for the key and value
 
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
@@ -292,7 +292,7 @@ class SimAttn(nn.Module):
 
         query = self.fwQ(query) # [B, T, D]
         key   = self.fwK(key)
-        # will not map values
+        value = self.fwK(value)
 
         if hL is not None and hR is not None:
             x, self.attn  = concept_attention(query, key, value, hL, hR, mask=mask, dropout=self.dropout)
@@ -312,29 +312,29 @@ class SimAttn(nn.Module):
 
         return x
 
-class Highway(nn.Module):
-    def __init__(self, h_size, h_out, num_layers=2):
+# class Highway(nn.Module):
+#     def __init__(self, h_size, h_out, num_layers=2):
 
-        super(Highway, self).__init__()
-        self.num_layers = num_layers
+#         super(Highway, self).__init__()
+#         self.num_layers = num_layers
 
-        self.linear = nn.ModuleList([nn.Linear(h_size, h_size) for _ in range(self.num_layers)])
-        self.gate = nn.ModuleList([nn.Linear(h_size, h_size) for _ in range(self.num_layers)])
-        self.fc = nn.Linear(h_size, h_out)
+#         self.linear = nn.ModuleList([nn.Linear(h_size, h_size) for _ in range(self.num_layers)])
+#         self.gate = nn.ModuleList([nn.Linear(h_size, h_size) for _ in range(self.num_layers)])
+#         self.fc = nn.Linear(h_size, h_out)
 
-    def forward(self, x):
-        '''
-            Input x is B*T*D
-            y = H(x,WH)· T(x,WT) + x · (1 − T(x,WT)).
-        '''
-        for i in range(self.num_layers):
+#     def forward(self, x):
+#         '''
+#             Input x is B*T*D
+#             y = H(x,WH)· T(x,WT) + x · (1 − T(x,WT)).
+#         '''
+#         for i in range(self.num_layers):
 
-            H = gelu(self.linear[i](x))
-            T = F.sigmoid(self.gate[i](x))
+#             H = gelu(self.linear[i](x))
+#             T = F.sigmoid(self.gate[i](x))
 
-            x = T * H + (1 - T) * x
+#             x = T * H + (1 - T) * x
 
-        return self.fc(x)
+#         return self.fc(x)
 
 # class FixedPositionalEncoding(nn.Module):
 #     "Implement the PE function."
@@ -477,21 +477,18 @@ class CrEncoderLayer(nn.Module):
         return x
 
 class Classifier(nn.Module):
-    def __init__(self, hidden_size):
+    def __init__(self, hidden_size, dropout):
 
         super(Classifier, self).__init__()
 
-        self.simf = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, 3),
-        )
-
+        self.dropout = nn.Dropout(dropout)
+        self.simf = nn.Linear(hidden_size, 3)
+        
     def forward(self, input):
         '''
         x: [B, T, D]
         '''
-        score = self.simf(input) # [B, 3]
+        score = self.simf(self.dropout(input)) # [B, 3]
 
         return score
 
@@ -525,8 +522,10 @@ class QAconcept(nn.Module):
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
 
-        self.proj_q = nn.Linear(4*embd_dim, embd_dim, bias=False)
-        self.proj_a = nn.Linear(4*embd_dim, embd_dim, bias=False)
+        self.pre_q = nn.Linear(4*embd_dim, 4*embd_dim)
+        self.pre_a = nn.Linear(4*embd_dim, 4*embd_dim)
+        self.proj_q = nn.Linear(4*embd_dim, embd_dim)
+        self.proj_a = nn.Linear(4*embd_dim, embd_dim)
 
 
         attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
@@ -544,9 +543,9 @@ class QAconcept(nn.Module):
         self.weight_q = nn.Linear(hidden_size, 1)
         self.weight_a = nn.Linear(hidden_size, 1)
 
-        self.proj = nn.Linear(4*embd_dim, hidden_size, bias=False)
+        self.proj = nn.Linear(4*embd_dim, hidden_size)
 
-        self.classifier = Classifier(hidden_size=hidden_size)
+        self.classifier = Classifier(hidden_size=hidden_size, dropout=drop_rate)
 
         # initialize weights
         self.apply(self.initialize_weights)
@@ -624,16 +623,16 @@ class QAconcept(nn.Module):
         answer = torch.cat( (answer, answer_align, answer-answer_align, answer.mul(answer_align)), -1 ) # [B, T, 4*D]
 
         # project to lower dim
-        question = self.proj_q(question)
-        answer = self.proj_a(answer)
+        question = self.proj_q(self.drop(self.pre_q(question)))
+        answer = self.proj_a(self.drop(self.pre_a(answer)))
 
         # self-attention again
         question = self.encoder_qq(question, qmask) # encode with self-attention # [B, T, D]
         answer = self.encoder_aa(answer, amask)
 
         # predict word importance
-        q_uweight = self.weight_q(gelu(self.fc_q(question))) # [B, T, 1]
-        a_uweight = self.weight_a(gelu(self.fc_a(answer)))
+        q_uweight = self.weight_q(self.drop(gelu(self.fc_q(question)))) # [B, T, 1]
+        a_uweight = self.weight_a(self.drop(gelu(self.fc_a(answer))))
         if qmask is not None:
             q_weight = F.softmax(q_uweight.masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 1]
         else:
