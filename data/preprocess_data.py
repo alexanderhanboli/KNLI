@@ -385,61 +385,61 @@ if __name__ == '__main__':
     wordnet_dir = os.path.join(base_dir, 'wordnet/prolog')
     make_dirs([dst_dir])
 
-    # print('1. build dictionary of WordNet\n')
-    # word_id_num, id_word, id_num_word = build_dictionary_wordnet([os.path.join(wordnet_dir, 'wn_s.pl')], remove_phrase=True)
+    print('1. build dictionary of WordNet\n')
+    word_id_num, id_word, id_num_word = build_dictionary_wordnet([os.path.join(wordnet_dir, 'wn_s.pl')], remove_phrase=True)
 
-    # print('2. obtain relation features\n')
-    # hypernymy, hyponymy, co_hyponyms = read_hyper_hypo(os.path.join(wordnet_dir, 'wn_hyp.pl'), id_word)
-    # print('hypernymy:', len(hypernymy))
-    # print('hyponymy:', len(hyponymy))
-    # print('co_hyponyms', len(co_hyponyms))
+    print('2. obtain relation features\n')
+    hypernymy, hyponymy, co_hyponyms = read_hyper_hypo(os.path.join(wordnet_dir, 'wn_hyp.pl'), id_word)
+    print('hypernymy:', len(hypernymy))
+    print('hyponymy:', len(hyponymy))
+    print('co_hyponyms', len(co_hyponyms))
 
-    # antonymy = read_antony(os.path.join(wordnet_dir, 'wn_ant.pl'), id_num_word, reflexive=False)
-    # print('antonymy:', len(antonymy))
+    antonymy = read_antony(os.path.join(wordnet_dir, 'wn_ant.pl'), id_num_word, reflexive=False)
+    print('antonymy:', len(antonymy))
 
-    # synonymy = read_synonymy(id_word)
-    # print('synonymy:', len(synonymy))
+    synonymy = read_synonymy(id_word)
+    print('synonymy:', len(synonymy))
 
-    # features_list = [
-    #                  hypernymy, 
-    #                  hyponymy, 
-    #                  co_hyponyms, 
-    #                  antonymy,
-    #                  synonymy
-    #                  ]
+    features_list = [
+                     hypernymy, 
+                     hyponymy, 
+                     co_hyponyms, 
+                     antonymy,
+                     synonymy
+                     ]
 
-    # feat_len = len(features_list)
-    # print('relation features dim:', feat_len)
+    feat_len = len(features_list)
+    print('relation features dim:', feat_len)
 
-    # print('3. save to readable format (txt)\n')
-    # w_w_features = OrderedDict()
-    # for idx, features in enumerate(features_list):
-    #     for k, v in features.items():
-    #         if k not in w_w_features:
-    #             w_w_features[k] = np.zeros(feat_len, dtype=float)
-    #             w_w_features[k][idx] = v
-    #         else:
-    #             w_w_features[k][idx] = v
+    print('3. save to readable format (txt)\n')
+    w_w_features = OrderedDict()
+    for idx, features in enumerate(features_list):
+        for k, v in features.items():
+            if k not in w_w_features:
+                w_w_features[k] = np.zeros(feat_len, dtype=float)
+                w_w_features[k][idx] = v
+            else:
+                w_w_features[k][idx] = v
 
-    # feat_path = os.path.join(dst_dir, 'pair_features.txt')
+    feat_path = os.path.join(dst_dir, 'pair_features.txt')
 
-    # print('number of total relation features:', len(w_w_features))
-    # with open(feat_path, 'w') as f:
-    #     for k, v in w_w_features.items():
-    #         f.write(k + ' ' + ' '.join(map(str,v.tolist())) + '\n')
+    print('number of total relation features:', len(w_w_features))
+    with open(feat_path, 'w') as f:
+        for k, v in w_w_features.items():
+            f.write(k + ' ' + ' '.join(map(str,v.tolist())) + '\n')
 
-    # print('4. obtain train/dev/test dataset\n')
-    # build_sequence(os.path.join(snli_dir, 'snli_1.0_dev.txt'), dst_dir)
-    # build_sequence(os.path.join(snli_dir, 'snli_1.0_test.txt'), dst_dir)
-    # build_sequence(os.path.join(snli_dir, 'snli_1.0_train.txt'), dst_dir)
+    print('4. obtain train/dev/test dataset\n')
+    build_sequence(os.path.join(snli_dir, 'snli_1.0_dev.txt'), dst_dir)
+    build_sequence(os.path.join(snli_dir, 'snli_1.0_test.txt'), dst_dir)
+    build_sequence(os.path.join(snli_dir, 'snli_1.0_train.txt'), dst_dir)
 
-    # print('5. obtain lemma format for train/dev/test dataset\n')
-    # CoreNLP(os.path.join(dst_dir, 'premise_snli_1.0_train.txt'))
-    # CoreNLP(os.path.join(dst_dir, 'hypothesis_snli_1.0_train.txt'))
-    # CoreNLP(os.path.join(dst_dir, 'premise_snli_1.0_dev.txt'))
-    # CoreNLP(os.path.join(dst_dir, 'hypothesis_snli_1.0_dev.txt'))
-    # CoreNLP(os.path.join(dst_dir, 'premise_snli_1.0_test.txt'))
-    # CoreNLP(os.path.join(dst_dir, 'hypothesis_snli_1.0_test.txt'))
+    print('5. obtain lemma format for train/dev/test dataset\n')
+    CoreNLP(os.path.join(dst_dir, 'premise_snli_1.0_train.txt'))
+    CoreNLP(os.path.join(dst_dir, 'hypothesis_snli_1.0_train.txt'))
+    CoreNLP(os.path.join(dst_dir, 'premise_snli_1.0_dev.txt'))
+    CoreNLP(os.path.join(dst_dir, 'hypothesis_snli_1.0_dev.txt'))
+    CoreNLP(os.path.join(dst_dir, 'premise_snli_1.0_test.txt'))
+    CoreNLP(os.path.join(dst_dir, 'hypothesis_snli_1.0_test.txt'))
 
     print('6. prepare snli json file for train/dev/test\n')
     train_data, train_count = build_for_json('train')
@@ -461,16 +461,16 @@ if __name__ == '__main__':
     #                   os.path.join(dst_dir, 'hypothesis_snli_1.0_train_lemma.txt')], 
     #                   os.path.join(dst_dir, 'vocab_cased_lemma.pkl'), wordnet=word_id_num, remove_phrase=True)
 
-    # print('7. convert to pkl format based on lemma dictionary\n')
-    # # dict_path = os.path.join(dst_dir, 'vocab_cased_lemma.pkl')
-    # # out_path = os.path.join(dst_dir, 'pair_features.pkl')
-    # # features2pkl(feat_path, dict_path, out_path)
-    # out_path = os.path.join(dst_dir, 'pair_features_binary.pkl')
-    # features2pkl_binary(feat_path, out_path)
-    # out_path = os.path.join(dst_dir, 'pair_features_continuous.pkl')
-    # features2pkl_continuous(feat_path, out_path)
+    print('7. convert to pkl format based on lemma dictionary\n')
+    # dict_path = os.path.join(dst_dir, 'vocab_cased_lemma.pkl')
+    # out_path = os.path.join(dst_dir, 'pair_features.pkl')
+    # features2pkl(feat_path, dict_path, out_path)
+    out_path = os.path.join(dst_dir, 'pair_features_binary.pkl')
+    features2pkl_binary(feat_path, out_path)
+    out_path = os.path.join(dst_dir, 'pair_features_continuous.pkl')
+    features2pkl_continuous(feat_path, out_path)
 
-    # print('8. create directory for saving models')
-    # make_dirs([os.path.join(os.path.dirname(base_dir), 'models')])
+    print('8. create directory for saving models')
+    make_dirs([os.path.join(os.path.dirname(base_dir), 'models')])
 
-    # print('done\n')
+    print('done\n')
