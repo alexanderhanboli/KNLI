@@ -351,6 +351,43 @@ def build_for_json(split):
     print('max min len premise for', split, max(len_p), min(len_p))
     print('max min len hypothesis for', split, max(len_h), min(len_h))
 
+    # print('preparing adversarial test set...\n')
+    # with jsonlines.open(os.path.join(dst_dir, 'dataset.jsonl')) as reader:
+    # for t in tqdm(reader, desc="loading "+dataset):
+    #     tmp = {}
+    #     premise = t['sentence1']
+    #     hypothesis = t['sentence2']
+    #     premise_tokens = [w.text for w in tokenizer(premise)]
+    #     hypothesis_tokens = [w.text for w in tokenizer(hypothesis)]
+    #     premise_lemmas = [w.lemma_ for w in tokenizer(premise)]
+    #     hypothesis_lemmas = [w.lemma_ for w in tokenizer(hypothesis)]
+
+    #     tmp['premise'] = premise
+    #     tmp['hypothesis'] = hypothesis
+    #     tmp['premise_tokens'] = premise_tokens
+    #     tmp['hypothesis_tokens'] = hypothesis_tokens
+    #     tmp['premise_lemmas'] = premise_lemmas
+    #     tmp['hypothesis_lemmas'] = hypothesis_lemmas
+        
+    #     if t['gold_label'] == 'neutral':
+    #         count_N += 1
+    #         l_N['premise'].append(len(premise_tokens))
+    #         l_N['hypothesis'].append(len(hypothesis_tokens))
+    #     elif t['gold_label'] == 'contradiction':
+    #         count_C += 1
+    #         l_C['premise'].append(len(premise_tokens))
+    #         l_C['hypothesis'].append(len(hypothesis_tokens))
+    #     elif t['gold_label'] == 'entailment':
+    #         count_E += 1
+    #         l_E['premise'].append(len(premise_tokens))
+    #         l_E['hypothesis'].append(len(hypothesis_tokens))
+    #     else:
+    #         continue
+
+    #     tmp['label'] = CLASS_DICT[t['gold_label']]
+
+    #     output.append(tmp)
+
     return output, count
 
 def CoreNLP(file_path):

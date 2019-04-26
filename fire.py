@@ -93,9 +93,9 @@ if __name__ == "__main__":
         opt['val_interval'] = 1
         opt['print_every'] = 2000
         opt['loader_num_workers'] = 4
-        opt['batch_size'] = choice([8])
+        opt['batch_size'] = choice([16])
         opt['checkpoint_every'] = 20
-        opt['seed_random'] = 42 #np.random.randint(100, 10000)
+        opt['seed_random'] = 822 #np.random.randint(100, 10000)
         # opt['lr_decay'] = choice([10**uniform(-1.2,-.01), 1])
         opt['log_id'] = random_id
         #opt['fp_embd_dim'] = 100
