@@ -25,7 +25,7 @@ from sklearn import metrics
 parser = argparse.ArgumentParser()
 # Input data
 parser.add_argument('--fp_test', default='./data/snli/snli_data.json')
-
+parser.add_argument('--split', default='test')
 #
 parser.add_argument('--model_name', default='QAconcept', type=str)
 
@@ -156,7 +156,7 @@ if __name__ == "__main__":
         pre_embd = load_vectors(params.fp_embd)
 
     dset_test = BatchDataLoader(fpath = args.fp_test, embd_dict = pre_embd, concept_dict=concept_dict,
-                                 split='test', emd_dim=params.fp_word_embd_dim, num_concepts = params.num_concepts)
+                                 split=args.split, emd_dim=params.fp_word_embd_dim, num_concepts = params.num_concepts)
 
     test_loader = data_utils.DataLoader(dset_test, batch_size = args.batch_size, shuffle=False, num_workers = args.loader_num_workers, drop_last=True)
 
