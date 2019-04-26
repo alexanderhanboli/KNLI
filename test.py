@@ -14,7 +14,7 @@ import time
 import math
 import argparse
 from collections import OrderedDict, defaultdict
-from misc.utilities import get_fname_from_path, Preload_embedding
+from misc.utilities import get_fname_from_path, Preload_embedding, load_vectors
 from misc.torch_utility import load_model_states
 from misc.data_loader import BatchDataLoader
 
