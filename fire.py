@@ -88,8 +88,8 @@ if __name__ == "__main__":
         opt['hidden_size']  = choice([512])
         opt['heads'] = choice([5, 6]) # divisible for 300
         opt['droprate'] =  choice([0.10])
-        opt['num_layers'] = choice([4, 5, 6])
-        opt['num_layers_cross'] = choice([4, 5, 6])
+        opt['num_layers'] = choice([1,2,3])
+        opt['num_layers_cross'] = choice([1,2,3])
         opt['sharpening'] = choice([False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1
