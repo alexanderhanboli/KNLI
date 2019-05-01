@@ -23,11 +23,13 @@ import datetime
 import pytz
 from sklearn import metrics
 
+import pdb
+
 parser = argparse.ArgumentParser()
 # Input data
 parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
-parser.add_argument('--fp_embd',  default='./data/fasttext/wiki.en.bin')
+parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
 parser.add_argument('--fp_word_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_context',  default='')
@@ -38,9 +40,9 @@ parser.add_argument('--bert_embd', default=False, action='store_true')
 parser.add_argument('--bert_layers', default=10, type=int)
 
 # Module optim options
-parser.add_argument('--opt', default='openai', type=str, choices=['original', 'bert', 'openai'])
-parser.add_argument('--batch_size', default=8, type=int)
-parser.add_argument('--beta1', default=0.9, type=float)
+parser.add_argument('--opt', default='bert', type=str, choices=['original', 'bert', 'openai'])
+parser.add_argument('--batch_size', default=16, type=int)
+parser.add_argument('--beta1', default=0.5, type=float)
 parser.add_argument('--beta2', default=0.999, type=float)
 parser.add_argument('--lr', type=float, default=6.25e-5)
 parser.add_argument('--lr_warmup', type=float, default=0.05)
@@ -61,13 +63,13 @@ parser.add_argument('--heads', type=int, default=5)
 parser.add_argument('--loader_num_workers', type=int, default=5)
 parser.add_argument('--print_every', type=int, default=1000)
 parser.add_argument('--val_interval', type=int, default=1)
-parser.add_argument('--n_epochs', default=50, type=int)
+parser.add_argument('--n_epochs', default=5, type=int)
 parser.add_argument('--check_point_dir', default='./check_points/')
 parser.add_argument('--log_id', default='dummy123')
 parser.add_argument('--checkpoint_every', default=10, type=int)
 parser.add_argument('--seed_random', default=42, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
-parser.add_argument('--model_name', default='QAconcept')
+parser.add_argument('--model_name', default='KNLIresnet')
 parser.add_argument('--description', default='', type=str)
 parser.add_argument('--load_model', default=False, action='store_true')
 
@@ -185,9 +187,9 @@ def evaluate(data, use_mask = True, print_out = False):
 
     comp = (pred_class == label) # [B]
     correct  = comp.sum().data.item() # scalar
-    precision = metrics.precision_score(label.numpy(), pred_class.numpy(), average='macro')
-    recall = metrics.recall_score(label.numpy(), pred_class.numpy(), average='macro')
-    f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), average='macro')
+    precision = metrics.precision_score(label.numpy(), pred_class.numpy(), labels=[0,1,2], average=None)
+    recall = metrics.recall_score(label.numpy(), pred_class.numpy(), labels=[0,1,2], average=None)
+    f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), labels=[0,1,2], average=None)
 
     # print out some examples to console
     if print_out:
@@ -333,6 +335,15 @@ if __name__ == "__main__":
                          word_embd_dim=args.fp_word_embd_dim,
                          num_concepts=args.num_concepts)
 
+    elif args.model_name == 'KNLIresnet' or args.model_name == 'KNLIconceptResnet':
+        import models.KNLIconceptResnet as net
+        model = net.KNLIresnet(hidden_size = args.hidden_size, drop_rate = args.droprate,
+                         num_layers = args.num_layers,
+                         num_layers_cross = args.num_layers_cross,
+                         heads = args.heads, embd_dim=args.fp_embd_dim,
+                         word_embd_dim=args.fp_word_embd_dim,
+                         num_concepts=args.num_concepts)
+
     #########################
     # Check whether there is
     # snapshot of current model
@@ -462,37 +473,41 @@ if __name__ == "__main__":
 
             val_loss = 0.0
             val_correct = 0.0
-            val_f1 = 0.0
-            val_precision = 0.0
-            val_recall = 0.0
+            val_f1 = np.array([0.0, 0.0, 0.0])
+            val_precision = np.array([0.0, 0.0, 0.0])
+            val_recall = np.array([0.0, 0.0, 0.0])
             total_data = 0
-            for j, data_val in enumerate(val_loader, 0):
 
+            for j, data_val in enumerate(val_loader, 0):
                 print_out = False
                 if j == len(val_loader)-1:
                     print_out = True
                 val_loss_correct = evaluate(data_val, use_mask = mask_data, print_out = print_out)
                 val_loss    += val_loss_correct[0]
                 val_correct += val_loss_correct[1]
-                val_f1 += val_loss_correct[2]
-                val_precision += val_loss_correct[3]
-                val_recall +=val_loss_correct[4]
+                try:
+                    val_f1 += val_loss_correct[2]
+                    val_precision += val_loss_correct[3]
+                    val_recall +=val_loss_correct[4]
+                except:
+                    pdb.set_trace()
+
                 total_data += val_loss_correct[5]
 
-            val_f1 = val_f1 / len(val_loader)
-            val_precision = val_precision / len(val_loader)
-            val_recall = val_recall / len(val_loader)
-            val_correct = val_correct / total_data
+            val_f1 = list(val_f1 / len(val_loader))
+            val_precision = list(val_precision / len(val_loader))
+            val_recall = list(val_recall / len(val_loader))
+            val_accuracy = val_correct / total_data
             stats['val_losses'].append(val_loss)
             stats['val_losses_ts'].append(epoch)
             stats['val_f1'].append(val_f1)
             stats['val_precision'].append(val_precision)
             stats['val_recall'].append(val_recall)
-            stats['val_acc'].append(val_correct)
+            stats['val_acc'].append(val_accuracy)
 
-            if val_correct > best_val_acc:
+            if val_accuracy > best_val_acc:
                 best_val_f1 = val_f1
-                best_val_acc = val_correct
+                best_val_acc = val_accuracy
                 best_val_precision = val_precision
                 best_val_recall = val_recall
                 best_epoch = epoch
@@ -504,9 +519,9 @@ if __name__ == "__main__":
                 fname_ck =  fname_part + best_load_ext + timenow + '_best.pt'
                 fname_json =  fname_part + best_load_ext + timenow + '_best.json'
                 stats['best_val_accuracy'] = best_val_acc
-                stats['best_val_f1'] = best_val_f1
-                stats['best_precision'] = best_val_precision
-                stats['best_recall'] = best_val_recall
+                stats['best_val_f1'] = list(best_val_f1)
+                stats['best_precision'] = list(best_val_precision)
+                stats['best_recall'] = list(best_val_recall)
                 stats['best_ts'] = (epoch, time_step)
                 best_state = get_state(model)
                 print('Saving best model so far in epoch %d to %s' % (epoch, fname_ck))
@@ -523,14 +538,14 @@ if __name__ == "__main__":
                 del best_state
 
                 dump_to_json(fname_json, checkpoint)
-                print("Best val f1 %.4f, precision %.4f, recall %.4f, and acc %.4f so far in epoch %d after %d steps"
-                       % (best_val_f1, best_val_precision, best_val_recall, best_val_acc, epoch, optimizer._step))
+                print("Best val f1 {}, precision {}, recall {}, and acc {} so far in epoch {} after {} steps"
+                       .format(best_val_f1, best_val_precision, best_val_recall, best_val_acc, epoch, optimizer._step))
 
             else:
-                print('Validation f1 %.4f, precision %.4f, recall %.4f, and accuracy %.4f in epoch %d after %d steps'
-                       % (val_f1, val_precision, val_recall, val_correct, epoch, optimizer._step))
-                print("Best val f1 %.4f, precision %.4f, recall %.4f, and acc %.4f so far in epoch %d"
-                       % (best_val_f1, best_val_precision, best_val_recall, best_val_acc, best_epoch))
+                print('Validation f1 {}, precision {}, recall {}, and accuracy {} in epoch {} after {} steps'
+                       .format(val_f1, val_precision, val_recall, val_correct, epoch, optimizer._step))
+                print("Best val f1 {}, precision {}, recall {}, and acc {} so far in epoch {}"
+                       .format(best_val_f1, best_val_precision, best_val_recall, best_val_acc, best_epoch))
 
 
         if epoch % args.checkpoint_every == 0:

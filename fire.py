@@ -16,7 +16,7 @@ parser.add_argument('--cp',  default=False, action='store_true')
 parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
 parser.add_argument('--fp_embd',  default='./data/fasttext/wiki.en.bin')
-parser.add_argument('--n_epochs', default=500, type=int)
+parser.add_argument('--n_epochs', default=5, type=int)
 # test data
 # parser.add_argument('--ftest', default='hho_RT_new_splits.json')
 
@@ -72,6 +72,7 @@ if __name__ == "__main__":
     opt['check_point_dir'] = os.path.join(root_folder_ck, 'check_points')
     opt['n_epochs'] = args.n_epochs
     opt['model_name'] = args.model_name
+    opt['description'] = args.description
 
     create_log_dir(os.path.join(root_folder_data,'logs'))
 
@@ -88,8 +89,8 @@ if __name__ == "__main__":
         opt['hidden_size']  = choice([512])
         opt['heads'] = choice([5, 6]) # divisible for 300
         opt['droprate'] =  choice([0.10])
-        opt['num_layers'] = choice([1,2,3])
-        opt['num_layers_cross'] = choice([1,2,3])
+        opt['num_layers'] = choice([4,5,6])
+        opt['num_layers_cross'] = choice([4,5,6])
         opt['sharpening'] = choice([False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1

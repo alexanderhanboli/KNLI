@@ -6,13 +6,15 @@ import sys
 import ntpath
 import glob
 
+import pdb
+
 parser = argparse.ArgumentParser()
 # Input data
 parser.add_argument('--check_point_dir', default='/home/ubuntu/projects/KNLI/check_points/')
 parser.add_argument('--model_name',  default='')
 parser.add_argument('--cp',  default=False, action='store_true')
 # Test data
-parser.add_argument('--ftest', default='snli_data.json')
+parser.add_argument('--ftest', default='./data/snli/snli_data.json')
 
 def get_fname_from_path(f):
     '''
@@ -47,7 +49,12 @@ def find_best_model(check_point_dir, finput):
   best_precision = -1
   for i in finput:
     vals = read_json_file(os.path.join(check_point_dir,i))
-    curr_v = vals['best_val_accuracy']
+
+    try:
+      curr_v = vals['best_val_accuracy']
+    except:
+      pdb.set_trace()
+      
     if curr_v > best_val:
           best_val = curr_v
           best_args = vals['args']
@@ -111,11 +118,11 @@ if __name__ == "__main__":
 
     for gid, model in enumerate(list_models.keys()):
         pre, recall, acc, bargs ,ptf = find_best_model(args.check_point_dir, list_models[model])
-        print(" %s ==> precison: %.4f, recall: %.4f, accuracy: %.4f, file %s" %(model, pre, recall, acc, ptf))
+        print(" {} ==> precison: {}, recall: {}, accuracy: {}, file {}".format(model, pre, recall, acc, ptf))
         print("-----------------------------------")
         print(" the best args are: {}".format(bargs))
-        gcmd = 'CUDA_VISIBLE_DEVICES=%d  ' % (gid, )
-        command = "python -u test.py --fp_test " + args.ftest + " --best_model "+ ptf  + " --split test --batch_size 16"
+        gcmd = '\nCUDA_VISIBLE_DEVICES=%d  ' % (gid, )
+        command = "python -u test.py --fp_test " + args.ftest + " --model_name " + bargs['model_name'] + " --best_model "+ ptf  + " --batch_size 16 --split test"
         print(gcmd + command)
         print("-----------------------------------")
         cp_list.append(ptf)
