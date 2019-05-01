@@ -15,6 +15,7 @@ import shutil
 import tempfile
 from functools import wraps
 from hashlib import sha256
+import io
 from io import open
 
 import boto3

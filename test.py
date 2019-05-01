@@ -14,7 +14,7 @@ import time
 import math
 import argparse
 from collections import OrderedDict, defaultdict
-from misc.utilities import get_fname_from_path, Preload_embedding
+from misc.utilities import get_fname_from_path, Preload_embedding, load_vectors
 from misc.torch_utility import load_model_states
 from misc.data_loader import BatchDataLoader
 
@@ -22,10 +22,12 @@ import sys
 from scipy.spatial.distance import cdist
 from sklearn import metrics
 
+import pdb
+
 parser = argparse.ArgumentParser()
 # Input data
 parser.add_argument('--fp_test', default='./data/snli/snli_data.json')
-
+parser.add_argument('--split', default='test')
 #
 parser.add_argument('--model_name', default='QAconcept', type=str)
 
@@ -77,13 +79,19 @@ def evaluate(data, use_mask = True, print_out = False):
     # predict relevancy
     ############################
     pred_score, pred_class = torch.max(matching.cpu(), 1) # [B], [B]
+
+    # pdb.set_trace()
+
     label = torch.tensor(label, dtype=torch.int64).cpu() # [B]
 
     comp = (pred_class == label) # [B]
     correct  = comp.sum().data.item() # scalar
-    precision = metrics.precision_score(label.numpy(), pred_class.numpy(), average='macro')
-    recall = metrics.recall_score(label.numpy(), pred_class.numpy(), average='macro')
-    f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), average='macro')
+    precision = metrics.precision_score(label.numpy(), pred_class.numpy(), average=None)
+    recall = metrics.recall_score(label.numpy(), pred_class.numpy(), average=None)
+    f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), average=None)
+
+    if correct < 8:
+        print('predicted class is {}, label is {}'.format(pred_class, label))
 
     # print out some examples to console
     if print_out:
@@ -134,6 +142,15 @@ if __name__ == "__main__":
                              heads = params.heads, embd_dim=params.fp_embd_dim,
                              word_embd_dim=params.fp_word_embd_dim,
                              num_concepts=params.num_concepts)
+    elif args.model_name == 'KNLIresnet' or args.model_name == 'KNLIconceptResnet':
+        import models.KNLIconceptResnet as net
+        model = net.KNLIresnet(hidden_size = params.hidden_size, drop_rate = params.droprate,
+                         num_layers = params.num_layers,
+                         num_layers_cross = params.num_layers_cross,
+                         heads = params.heads, embd_dim=params.fp_embd_dim,
+                         word_embd_dim=params.fp_word_embd_dim,
+                         num_concepts=params.num_concepts)
+
 
 
     print("loading the model %s...." % args.best_model)
@@ -156,7 +173,7 @@ if __name__ == "__main__":
         pre_embd = load_vectors(params.fp_embd)
 
     dset_test = BatchDataLoader(fpath = args.fp_test, embd_dict = pre_embd, concept_dict=concept_dict,
-                                 split='test', emd_dim=params.fp_word_embd_dim, num_concepts = params.num_concepts)
+                                 split=args.split, emd_dim=params.fp_word_embd_dim, num_concepts = params.num_concepts)
 
     test_loader = data_utils.DataLoader(dset_test, batch_size = args.batch_size, shuffle=False, num_workers = args.loader_num_workers, drop_last=True)
 
@@ -181,10 +198,10 @@ if __name__ == "__main__":
     results = {}
 
     test_loss = 0.0
-    test_accuracy = 0.0
-    test_precision = 0.0
-    test_recall = 0.0
-    test_f1 = 0.0
+    test_correct = 0.0
+    # test_precision = [0.0, 0.0, 0.0]
+    # test_recall = [0.0, 0.0, 0.0]
+    # test_f1 = [0.0, 0.0, 0.0]
     total_data = 0.0
 
     for j, sample in enumerate(test_loader, 0):
@@ -196,22 +213,22 @@ if __name__ == "__main__":
         test_stat = evaluate(sample, use_mask = mask_data, print_out = print_out)
 
         test_loss += test_stat[0]
-        test_accuracy += test_stat[1]
-        test_f1 += test_stat[2]
-        test_precision += test_stat[3]
-        test_recall += test_stat[4]
+        test_correct += test_stat[1]
+        # test_f1 += test_stat[2]
+        # test_precision += test_stat[3]
+        # test_recall += test_stat[4]
         total_data += test_stat[5]
 
-    test_accuracy = test_accuracy / total_data
-    test_f1 = test_f1 / len(test_loader)
-    test_precision = test_precision / len(test_loader)
-    test_recall = test_recall / len(test_loader)
+    test_accuracy = test_correct / total_data
+    # test_f1 = test_f1 / len(test_loader)
+    # test_precision = test_precision / len(test_loader)
+    # test_recall = test_recall / len(test_loader)
     test_loss = test_loss / len(test_loader)
 
     results['accuracy'] = test_accuracy
-    results['f1'] = test_f1
-    results['precision'] = test_precision
-    results['recall'] = test_recall
+    # results['f1'] = test_f1
+    # results['precision'] = test_precision
+    # results['recall'] = test_recall
     results['loss'] = test_loss
 
     print('the final accuracy is {}'.format(test_accuracy))

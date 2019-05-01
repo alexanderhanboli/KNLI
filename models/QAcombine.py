@@ -96,7 +96,7 @@ def attention(query, key, value, mask=None, dropout=None):
 
     return torch.matmul(p_attn, value), p_attn
 
-def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
+def concept_attention(query, key, value, hQ, hK, hV, mask=None, dropout=None):
     '''
      Compute concept augmented dot product
      query: [B, T1, d_k]
@@ -131,10 +131,10 @@ def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
     # implementation 2: direct addition
     # (q + hL) * (k + hR)
     q = query.unsqueeze(2) # [B, T1, 1, d_k]
-    q_plus_hL = q + hL # [B, T1, T2, d_k]
+    q_plus_hQ = q + hQ # [B, T1, T2, d_k]
     k = key.unsqueeze(2) # [B, T2, 1, d_k]
-    k_plus_hR = (k + hR).transpose(1, 2) # [B, T1, T2, d_k]
-    scores = torch.sum(q_plus_hL * k_plus_hR, dim=-1, keepdim=False) / math.sqrt(d_k)# [B, T1, T2]
+    k_plus_hK = (k + hK).transpose(1, 2) # [B, T1, T2, d_k]
+    scores = torch.sum(q_plus_hQ * k_plus_hK, dim=-1, keepdim=False) / math.sqrt(d_k)# [B, T1, T2]
 
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
@@ -145,7 +145,7 @@ def concept_attention(query, key, value, hL, hR, mask=None, dropout=None):
         p_attn = dropout(p_attn)
 
     # calculate aligned vectors
-    v = value.unsqueeze(2) + hR # [B, T2, T1, d_k]
+    v = value.unsqueeze(2) + hV # [B, T2, T1, d_k]
     v = v.transpose(1, 2) # [B, T1, T2, d_k]
 
     p_attn = p_attn.unsqueeze(3) # [B, T1, T2, 1]
@@ -271,7 +271,8 @@ class SimAttn(nn.Module):
 
         ## Linear layers for multi-head attention
         self.fwQ  = nn.Linear(d_model, d_model) # for the query
-        self.fwK  = nn.Linear(d_model, d_model) # for the key and value
+        self.fwK  = nn.Linear(d_model, d_model) # for the key
+        self.fwV  = nn.Linear(d_model, d_model) # for the value
 
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
@@ -292,10 +293,14 @@ class SimAttn(nn.Module):
 
         query = self.fwQ(query) # [B, T, D]
         key   = self.fwK(key)
-        value = self.fwK(value)
+        value = self.fwV(value)
+
+        hQ = self.fwQ(hL) # [B, T1, T2, d_k]
+        hK = self.fwK(hR)
+        hV = self.fwV(hR)
 
         if hL is not None and hR is not None:
-            x, self.attn  = concept_attention(query, key, value, hL, hR, mask=mask, dropout=self.dropout)
+            x, self.attn  = concept_attention(query, key, value, hQ, hK, hV, mask=mask, dropout=self.dropout)
             # x: [B, T1, d_k]
             # sharpening the attention distribution
             if sharpening:
@@ -428,53 +433,53 @@ class EncoderLayer(nn.Module):
         x = self.norm_out(x)
         return x
 
-class CrEncoder(nn.Module):
-    "Core encoder is a stack of N layers"
-    def __init__(self, layer, N=4):
+# class CrEncoder(nn.Module):
+#     "Core encoder is a stack of N layers"
+#     def __init__(self, layer, N=4):
 
-        super(CrEncoder, self).__init__()
-        self.layers = clones(layer, N)
+#         super(CrEncoder, self).__init__()
+#         self.layers = clones(layer, N)
 
-    def forward(self, x, m, qmask=None, amask=None):
-        "Pass the input (and mask) through each layer in turn."
-        for layer in self.layers:
-            x = layer(x, m, qmask, amask)
-        return x
+#     def forward(self, x, m, qmask=None, amask=None):
+#         "Pass the input (and mask) through each layer in turn."
+#         for layer in self.layers:
+#             x = layer(x, m, qmask, amask)
+#         return x
 
-class CrEncoderLayer(nn.Module):
-    "Encoder is made up of self-attn and feed forward (defined below)"
-    def __init__(self, size, self_attn, cross_attn, feed_forward, dropout):
+# class CrEncoderLayer(nn.Module):
+#     "Encoder is made up of self-attn and feed forward (defined below)"
+#     def __init__(self, size, self_attn, cross_attn, feed_forward, dropout):
 
-        super(CrEncoderLayer, self).__init__()
-        self.self_attn = self_attn
-        self.cross_attn = cross_attn
-        self.feed_forward = feed_forward
-        self.norm_in = LayerNorm(size, eps=1e-12)
-        self.norm_mid = LayerNorm(size, eps=1e-12)
-        self.norm_out = LayerNorm(size, eps=1e-12)
-        self.dropout = nn.Dropout(dropout)
-        self.size = size
+#         super(CrEncoderLayer, self).__init__()
+#         self.self_attn = self_attn
+#         self.cross_attn = cross_attn
+#         self.feed_forward = feed_forward
+#         self.norm_in = LayerNorm(size, eps=1e-12)
+#         self.norm_mid = LayerNorm(size, eps=1e-12)
+#         self.norm_out = LayerNorm(size, eps=1e-12)
+#         self.dropout = nn.Dropout(dropout)
+#         self.size = size
 
-    def forward(self, x, m, qmask=None, amask=None):
+#     def forward(self, x, m, qmask=None, amask=None):
 
-        # self attention layer w/ resnet
-        res = self.self_attn(x, x, x, qmask)
-        res = self.dropout(res)
-        x = x + res
+#         # self attention layer w/ resnet
+#         res = self.self_attn(x, x, x, qmask)
+#         res = self.dropout(res)
+#         x = x + res
 
-        # cross attention
-        res = self.norm_in(x)
-        res = self.cross_attn(res, m, m, amask)
-        res = self.dropout(res)
-        x = x + res
+#         # cross attention
+#         res = self.norm_in(x)
+#         res = self.cross_attn(res, m, m, amask)
+#         res = self.dropout(res)
+#         x = x + res
 
-        # feed forward layer w/ resnet
-        res = self.norm_mid(x)
-        res = self.feed_forward(res)
-        res = self.dropout(res)
-        x = x + res
-        x = self.norm_out(x)
-        return x
+#         # feed forward layer w/ resnet
+#         res = self.norm_mid(x)
+#         res = self.feed_forward(res)
+#         res = self.dropout(res)
+#         x = x + res
+#         x = self.norm_out(x)
+#         return x
 
 class Classifier(nn.Module):
     def __init__(self, hidden_size, dropout):
@@ -518,7 +523,8 @@ class QAconcept(nn.Module):
 
         # layers
         self.concept = ConceptEncoding(d_model=embd_dim, num_concepts=num_concepts)
-        self.coattention = SimAttn(d_model=embd_dim, dropout=drop_rate)
+        self.coattention_q = SimAttn(d_model=embd_dim, dropout=drop_rate)
+        self.coattention_a = c(self.coattention_q)
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
 
@@ -615,8 +621,8 @@ class QAconcept(nn.Module):
         else:
             hR = None
 
-        question_align = self.coattention(question, answer, answer, hL, hR, sharpening, amask) # [B, T, D]
-        answer_align = self.coattention(answer, question, question, hR, hL, sharpening, qmask)
+        question_align = self.coattention_q(question, answer, answer, hL, hR, sharpening, amask) # [B, T, D]
+        answer_align = self.coattention_a(answer, question, question, hR, hL, sharpening, qmask)
 
         # concatenation (enrichment with the same orientation)
         question = torch.cat( (question, question_align, question-question_align, question.mul(question_align)), -1 )

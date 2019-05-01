@@ -66,15 +66,16 @@ def prepare_dataset(dataset, tokenizer):
 tr_e, tr_c, tr_n, tr_le, tr_lc, tr_ln, train_data = prepare_dataset('./snli/snli_1.0/snli_1.0_train.jsonl', nlp)
 dev_e, dev_c, dev_n, dev_le, dev_lc, dev_ln, dev_data = prepare_dataset('./snli/snli_1.0/snli_1.0_dev.jsonl', nlp)
 test_e, test_c, test_n, test_le, test_lc, test_ln, test_data = prepare_dataset('./snli/snli_1.0/snli_1.0_test.jsonl', nlp)
+testadv_e, testadv_c, testadv_n, testadv_le, testadv_lc, testadv_ln, testadv_data = prepare_dataset('./snli/snli_1.0/data/dataset.jsonl', nlp)
 
-data = {'train': list(train_data), 'dev': list(dev_data), 'test': list(test_data), 
-        'n_entail': {'train': tr_e, 'dev':dev_e, 'test':test_e},
-        'n_contradiction': {'train':tr_c, 'dev':dev_c, 'test':test_c}, 
-        'n_neutral': {'train':tr_n, 'dev':dev_n, 'test':test_n}, 
-        'len_entail': {'train': tr_le, 'dev':dev_le, 'test':test_le},
-        'len_contradiction': {'train':tr_lc, 'dev':dev_lc, 'test':test_lc}, 
-        'len_neutral': {'train':tr_ln, 'dev':dev_ln, 'test':test_ln}, 
-        'split_size': {'train':tr_e + tr_c + tr_n, 'dev':dev_e+dev_c+dev_n, 'test':test_e+test_c+test_n}}
+data = {'train': list(train_data), 'dev': list(dev_data), 'test': list(test_data), 'test_adv': list(testadv_data),
+        'n_entail': {'train': tr_e, 'dev':dev_e, 'test':test_e, 'test_adv':testadv_e},
+        'n_contradiction': {'train':tr_c, 'dev':dev_c, 'test':test_c, 'test_adv':testadv_c}, 
+        'n_neutral': {'train':tr_n, 'dev':dev_n, 'test':test_n, 'test_adv':testadv_n}, 
+        'len_entail': {'train': tr_le, 'dev':dev_le, 'test':test_le, 'test_adv':testadv_le},
+        'len_contradiction': {'train':tr_lc, 'dev':dev_lc, 'test':test_lc, 'test_adv':testadv_lc}, 
+        'len_neutral': {'train':tr_ln, 'dev':dev_ln, 'test':test_ln, 'test_adv':testadv_ln}, 
+        'split_size': {'train':tr_e + tr_c + tr_n, 'dev':dev_e+dev_c+dev_n, 'test':test_e+test_c+test_n, 'test_adv':testadv_e+testadv_c+testadv_n}}
 
 print("Saving the data...\n")
 with open(os.path.join('./snli', 'snli_data.json'), 'w+') as outfile:
