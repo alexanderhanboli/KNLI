@@ -96,7 +96,7 @@ def attention(query, key, value, mask=None, dropout=None):
 
     return torch.matmul(p_attn, value), p_attn
 
-def concept_attention(query, key, value, hQ, hK, hV, mask=None, dropout=None):
+def concept_attention(query, key, value, hQ, mask=None, dropout=None):
     '''
      Compute concept augmented dot product
      query: [B, T1, d_k]
@@ -104,8 +104,7 @@ def concept_attention(query, key, value, hQ, hK, hV, mask=None, dropout=None):
      B is the batch size
      T_{1,2} is the sentence length
      d_k is the dimension of each word
-     hL: [B, T1, T2, d_k]
-     hR: [B, T2, T1, d_k]
+     hQ: [B, T1, T2, d_k]
     '''
     b_size, T1, d_k = query.size()
     _, T2, _ = key.size()
@@ -132,9 +131,8 @@ def concept_attention(query, key, value, hQ, hK, hV, mask=None, dropout=None):
     # (q + hL) * (k + hR)
     q = query.unsqueeze(2) # [B, T1, 1, d_k]
     q_plus_hQ = q + hQ # [B, T1, T2, d_k]
-    k = key.unsqueeze(2) # [B, T2, 1, d_k]
-    k_plus_hK = (k + hK).transpose(1, 2) # [B, T1, T2, d_k]
-    scores = torch.sum(q_plus_hQ * k_plus_hK, dim=-1, keepdim=False) / math.sqrt(d_k)# [B, T1, T2]
+    k = key.unsqueeze(2).transpose(1, 2) # [B, 1, T2, d_k]
+    scores = torch.sum(q_plus_hQ * k, dim=-1, keepdim=False) / math.sqrt(d_k)# [B, T1, T2]
 
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
@@ -144,15 +142,7 @@ def concept_attention(query, key, value, hQ, hK, hV, mask=None, dropout=None):
     if dropout is not None:
         p_attn = dropout(p_attn)
 
-    # calculate aligned vectors
-    v = value.unsqueeze(2) + hV # [B, T2, T1, d_k]
-    v = v.transpose(1, 2) # [B, T1, T2, d_k]
-
-    p_attn = p_attn.unsqueeze(3) # [B, T1, T2, 1]
-
-    query_align = torch.sum(p_attn * v, dim=2, keepdim=False) # [B, T1, d_k]
-
-    return query_align, p_attn.squeeze(-1)
+    torch.matmul(p_attn, value), p_attn
 
 """LayerNorm
 """
@@ -277,14 +267,13 @@ class SimAttn(nn.Module):
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value, hL, hR, sharpening=True, mask=None):
+    def forward(self, query, key, value, hL, sharpening=True, mask=None):
         '''
             query, key, value are B*T*D
             B: is batch size
             T: is sequence length
             D: is model dimension
             hL: [B, T1, T2, d_k]
-            hR: [B, T2, T1, d_k]
         '''
         if mask is not None:
             mask = mask.unsqueeze(1) # [B, 1, T]
@@ -295,25 +284,17 @@ class SimAttn(nn.Module):
         key   = self.fwK(key)
         value = self.fwV(value)
 
-        hQ = self.fwQ(hL) # [B, T1, T2, d_k]
-        hK = self.fwK(hR)
-        hV = self.fwV(hR)
-
-        if hL is not None and hR is not None:
-            x, self.attn  = concept_attention(query, key, value, hQ, hK, hV, mask=mask, dropout=self.dropout)
+        if hL is not None:
+            hQ = self.fwQ(hL) # [B, T1, T2, d_k]
+            x, self.attn  = concept_attention(query, key, value, hQ, mask=mask, dropout=self.dropout)
             # x: [B, T1, d_k]
-            # sharpening the attention distribution
-            if sharpening:
-                self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
-                v = value.unsqueeze(2) + hR # [B, T2, T1, d_k]
-                v = v.transpose(1, 2) # [B, T1, T2, d_k]
-                x = torch.sum(self.attn.unsqueeze(3) * v, dim=2, keepdim=False) # [B, T1, d_k]
         else:
             x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
-            # sharpening the attention distribution
-            if sharpening:
-                self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
-                x = torch.matmul(self.attn, value) # [B, T1, d_k]
+
+        # sharpening the attention distribution
+        if sharpening:
+            self.attn = F.softmax(1000 * self.attn, dim=-1).clamp(0, 1)
+            x = torch.matmul(self.attn, value) # [B, T1, d_k]
 
         return x
 
@@ -621,8 +602,8 @@ class QAconcept(nn.Module):
         else:
             hR = None
 
-        question_align = self.coattention_q(question, answer, answer, hL, hR, sharpening, amask) # [B, T, D]
-        answer_align = self.coattention_a(answer, question, question, hR, hL, sharpening, qmask)
+        question_align = self.coattention_q(question, answer, answer, hL, sharpening, amask) # [B, T, D]
+        answer_align = self.coattention_a(answer, question, question, hR, sharpening, qmask)
 
         # concatenation (enrichment with the same orientation)
         question = torch.cat( (question, question_align, question-question_align, question.mul(question_align)), -1 )
