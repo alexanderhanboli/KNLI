@@ -84,21 +84,21 @@ if __name__ == "__main__":
         random_id = str(randrange(10)) + str(int(time.time()))[-6:] # just returns 6 numbers
 
         opt['opt'] = choice(['openai', 'bert'])
-        opt['lr_warmup'] = choice([0.02, 0.05, 0.10])
+        opt['lr_warmup'] = choice([0.002, 0.01])
         opt['l2']  = choice([0.01])
         opt['hidden_size']  = choice([512])
         opt['heads'] = choice([5, 6]) # divisible for 300
         opt['droprate'] =  choice([0.10])
-        opt['num_layers'] = choice([4,5,6])
-        opt['num_layers_cross'] = choice([4,5,6])
+        opt['num_layers'] = choice([1,2,3])
+        opt['num_layers_cross'] = choice([1,2,3])
         opt['sharpening'] = choice([False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1
         opt['print_every'] = 2000
         opt['loader_num_workers'] = 4
-        opt['batch_size'] = choice([16])
+        opt['batch_size'] = choice([8,16])
         opt['checkpoint_every'] = 20
-        opt['seed_random'] = 1019 #np.random.randint(100, 10000)
+        opt['seed_random'] = 42 #np.random.randint(100, 10000)
         # opt['lr_decay'] = choice([10**uniform(-1.2,-.01), 1])
         opt['log_id'] = random_id
         #opt['fp_embd_dim'] = 100

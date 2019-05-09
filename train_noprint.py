@@ -18,6 +18,7 @@ from misc.utilities import timeSince, dump_to_json, create_dir, Preload_embeddin
 from misc.torch_utility import get_state, load_model_states
 from misc.data_loader import BatchDataLoader
 
+from tqdm import tqdm, trange
 import sys
 import datetime
 import pytz
@@ -41,11 +42,11 @@ parser.add_argument('--bert_layers', default=10, type=int)
 
 # Module optim options
 parser.add_argument('--opt', default='bert', type=str, choices=['original', 'bert', 'openai'])
-parser.add_argument('--batch_size', default=16, type=int)
+parser.add_argument('--batch_size', default=8, type=int)
 parser.add_argument('--beta1', default=0.5, type=float)
 parser.add_argument('--beta2', default=0.999, type=float)
 parser.add_argument('--lr', type=float, default=6.25e-5)
-parser.add_argument('--lr_warmup', type=float, default=0.05)
+parser.add_argument('--lr_warmup', type=float, default=0.002)
 parser.add_argument('--l2', type=float, default=0.01)
 parser.add_argument('--vector_l2', action='store_true')
 parser.add_argument('--lr_schedule', type=str, default='warmup_linear')
@@ -69,13 +70,13 @@ parser.add_argument('--log_id', default='dummy123')
 parser.add_argument('--checkpoint_every', default=10, type=int)
 parser.add_argument('--seed_random', default=42, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
-parser.add_argument('--model_name', default='KNLIresnet')
+parser.add_argument('--model_name', default='QAcombine')
 parser.add_argument('--description', default='', type=str)
 parser.add_argument('--load_model', default=False, action='store_true')
 
 #
 # parser.add_argument('--rule_based', default=False, type=bool)
-parser.add_argument('--sharpening', default=False, action='store_true')
+parser.add_argument('--sharpening', action='store_true')
 parser.add_argument('--weight_thrd', default=0.00, type=float) # threshold for selection
 # parser.add_argument('--sim_thrd', default=0.80, type=float) # threshold for similarity
 parser.add_argument('--neg_sampling_ratio', default=1, type=float) # sampling ration: 1 means 50-50, 1< means less negative example, 0 means no negative example
@@ -239,8 +240,11 @@ if __name__ == "__main__":
     # Load data
     ############################
     enable_sampler = False
+    print("Loading concept dictionary...\n")
     with open(args.concept_dict, 'rb') as f:
         concept_dict = pkl.load(f)
+
+    print("Initializing data loader...\n")
     if args.bert_embd:
         dset_train = BatchDataLoaderBert(fpath = args.fp_train, split='train',
                                     emd_dim=args.fp_word_embd_dim, num_bert_layers=args.bert_layers)
@@ -267,7 +271,7 @@ if __name__ == "__main__":
         train_loader = data_utils.DataLoader(dset_train, batch_size=args.batch_size,
             shuffle=True, num_workers=args.loader_num_workers, drop_last=True)
 
-    val_loader = data_utils.DataLoader(dset_val, batch_size=args.batch_size, shuffle=True,
+    val_loader = data_utils.DataLoader(dset_val, batch_size=args.batch_size, shuffle=False,
             num_workers=5, drop_last=True)
 
     ############################
@@ -278,6 +282,7 @@ if __name__ == "__main__":
     ############################
     # Build model and optimizer
     ############################
+    print("Initializing model...\n")
     if args.model_name == 'Qkeywords':
         import models.Qkeywords as net
         model = net.Qkeywords(hidden_size = args.hidden_size, drop_rate = args.droprate,
@@ -317,7 +322,7 @@ if __name__ == "__main__":
                          heads = args.heads, embd_dim=args.fp_embd_dim,
                          word_embd_dim=args.fp_word_embd_dim)
 
-    elif args.model_name == 'QAconcept':
+    elif args.model_name == 'QAconcept' or args.model_name == 'QAcombine':
         import models.QAcombine as net
         model = net.QAconcept(hidden_size = args.hidden_size, drop_rate = args.droprate,
                          num_layers = args.num_layers,
@@ -361,6 +366,7 @@ if __name__ == "__main__":
     #########################
     # Add loss function and other configs
     ########################
+    print("Initializing optimizer...\n")
     if args.opt == 'original':
         optimizer_adam = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()),
                                betas=(args.beta1, args.beta2), eps=args.e, weight_decay = args.l2)
@@ -439,13 +445,13 @@ if __name__ == "__main__":
             'best_precision':-1, 'best_recall':-1
             }
     time_step = 0
-    for epoch in range(1, args.n_epochs + 1):
+    for epoch in trange(1, args.n_epochs + 1, desc="Epoch"):
 
         progress = 100 * epoch / args.n_epochs
         running_loss = 0.0
         epc_loss = 0.0
 
-        for i, data_sample in enumerate(train_loader, 0):
+        for i, data_sample in enumerate(tqdm(train_loader, desc="Iteration")):
 
             time_step += 1
             batch_loss = train(data_sample, use_mask = mask_data)

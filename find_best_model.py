@@ -100,10 +100,12 @@ if __name__ == "__main__":
         if args.model_name != '' and model_type != args.model_name:
             continue
 
-        if model_type not in list_models:
-            list_models[model_type] = []
+        model_type_description = model_type + model_description
 
-        list_models[model_type].append(os.path.join(args.check_point_dir,j))
+        if model_type_description not in list_models:
+            list_models[model_type_description] = []
+
+        list_models[model_type_description].append(os.path.join(args.check_point_dir,j))
 
     ####################
     # Find the best model per groups
