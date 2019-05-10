@@ -76,6 +76,7 @@ parser.add_argument('--load_model', default=False, action='store_true')
 
 #
 # parser.add_argument('--rule_based', default=False, type=bool)
+parser.add_argument('--concept_attention', default='full', type=str, choices=['full', 'easy'])
 parser.add_argument('--sharpening', action='store_true')
 parser.add_argument('--weight_thrd', default=0.00, type=float) # threshold for selection
 # parser.add_argument('--sim_thrd', default=0.80, type=float) # threshold for similarity
@@ -134,9 +135,11 @@ def train(data, use_mask = True):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening, 
+                               concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening, 
+                               concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
 
     # calculate loss
     criterion = nn.CrossEntropyLoss()
@@ -169,9 +172,11 @@ def evaluate(data, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening, 
+                                concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening, alpha=args.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening, 
+                                concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
 
     # calculate word importance
     criterion = nn.CrossEntropyLoss()

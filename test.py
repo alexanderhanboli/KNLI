@@ -46,7 +46,7 @@ def Variable(data, *args, **kwargs):
     else:
         return autograd.Variable(data, *args, **kwargs)
 
-def evaluate(data, use_mask = True, print_out = False):
+def evaluate(data, params, use_mask = True, print_out = False):
     '''
         This function evaluates the model
     '''
@@ -64,9 +64,11 @@ def evaluate(data, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=params.sharpening, alpha=params.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=params.sharpening, 
+                                concept_attention=params.concept_attention, alpha=params.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=params.sharpening, alpha=params.alpha) # [B, 3]
+        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=params.sharpening, 
+                                concept_attention=params.concept_attention, alpha=params.alpha) # [B, 3]
 
     # calculate word importance
     criterion = nn.CrossEntropyLoss()
@@ -210,7 +212,7 @@ if __name__ == "__main__":
         if j % 100 == 0:
             print_out = True
 
-        test_stat = evaluate(sample, use_mask = mask_data, print_out = print_out)
+        test_stat = evaluate(sample, params, use_mask = mask_data, print_out = print_out)
 
         test_loss += test_stat[0]
         test_correct += test_stat[1]

@@ -95,7 +95,7 @@ class BatchDataLoader(Dataset):
                     except:
                         pass
                         
-                if self.concept_dict is not None and query_lemma[i] != answer_lemma[j]:
+                if self.concept_dict is not None and query_lemma[i].lower() != answer_lemma[j].lower():
                     if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
                         concept_qa[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
                         # print("\rExample {}:\nThe premise is {}\nhypothesis is {}\nword one lemma is {}\nword two lemma is {}\nword one is {}\nword two is {}\n".format(
