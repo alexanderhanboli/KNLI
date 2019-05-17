@@ -213,7 +213,7 @@ class SimAttn(nn.Module):
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
         self.num_concepts = num_concepts
-        # self.norm = LayerNorm(d_model, eps=1e-12)
+        self.norm = LayerNorm(d_model, eps=1e-12)
 
         self.concepts_left = nn.Linear(d_model, d_model * num_concepts, bias=False)
         self.concepts_right = nn.Linear(d_model, d_model * num_concepts, bias=False)
@@ -270,7 +270,7 @@ class SimAttn(nn.Module):
             pp = p_attn.unsqueeze(3) # [B, T1, T2, 1]
             q_align = torch.sum(pp * value, dim=2, keepdim=False) # [B, T1, d_k]
             # q_align = self.out(q_align) # [B, T1, d_k]
-            # q_align = self.norm(q_align)
+            q_align = self.norm(q_align)
 
             # aligned concept embeddings    
             concept_align = torch.sum(pp * qa_concept, dim=2, keepdim=False) # [B, T1, 5]
