@@ -213,6 +213,7 @@ class SimAttn(nn.Module):
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
         self.num_concepts = num_concepts
+        self.norm = LayerNorm(d_model, eps=1e-12)
 
         self.concepts_left = nn.Linear(d_model, d_model * num_concepts, bias=False)
         self.concepts_right = nn.Linear(d_model, d_model * num_concepts, bias=False)
@@ -237,15 +238,18 @@ class SimAttn(nn.Module):
 
             query_res = self.concepts_left(query).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T1, 1, 5, D]
             query_res = torch.sum(query_res * qa, dim=3, keepdim=False) # [B, T1, T2, D]
+            query_res = self.dropout(query_res)
             query = query.unsqueeze(2) + query_res # [B, T1, T2, D]
 
             key_res = self.concepts_right(key).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T2, 1, 5, D]
             key_res = torch.sum(key_res * aq, dim=3, keepdim=False) # [B, T2, T1, D]
+            key_res = self.dropout(key_res)
             key = key.unsqueeze(2) + key_res # [B, T2, T1, D]
             key = key.transpose(1, 2) # [B, T1, T2, D]
 
             value_res = self.concepts_right(value).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T2, 1, 5, D]
             value_res = torch.sum(value_res * aq, dim=3, keepdim=False) # [B, T2, T1, D]
+            value_res = self.dropout(value_res)
             value = value.unsqueeze(2) + value_res # [B, T2, T1, D]
             value = value.transpose(1, 2) # [B, T1, T2, D]
 
@@ -263,6 +267,7 @@ class SimAttn(nn.Module):
             # aligned query tokens
             pp = p_attn.unsqueeze(3) # [B, T1, T2, 1]
             q_align = torch.sum(pp * value, dim=2, keepdim=False) # [B, T1, d_k]
+            q_align = self.norm(q_align)
 
             # aligned concept embeddings    
             concept_align = torch.sum(pp * qa_concept, dim=2, keepdim=False) # [B, T1, 5]
