@@ -226,7 +226,7 @@ class MHSEAttn(nn.Module):
 
         self.norm = LayerNorm(d_model, eps=1e-12)
 
-    def forward(self, qa_concept, value, lambd=5.0, mask=None):
+    def forward(self, qa_concept, query, key, value, lambd=5.0, mask=None):
         '''
             query, key, value are B*T*D
             B: is batch size
@@ -470,8 +470,8 @@ class SEMH(nn.Module):
         answer = self.encoder_a(answer, amask)
 
         # alignment (can add external knowledge here)
-        question = self.coattention_q(qa_concept, answer, 5.0, amask) # [B, T, D]
-        answer = self.coattention_a(aq_concept, question, 5.0, qmask)
+        question = self.coattention_q(qa_concept, question, answer, answer, 5.0, amask) # [B, T, D]
+        answer = self.coattention_a(aq_concept, answer, question, question, 5.0, qmask)
 
         # self-attention again
         question = self.encoder_qq(question, qmask) # encode with self-attention # [B, T, D]
