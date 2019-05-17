@@ -28,6 +28,7 @@ import pdb
 
 parser = argparse.ArgumentParser()
 # Input data
+parser.add_argument('--model_name', default='SEMH')
 parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
 parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
@@ -70,7 +71,6 @@ parser.add_argument('--log_id', default='dummy123')
 parser.add_argument('--checkpoint_every', default=10, type=int)
 parser.add_argument('--seed_random', default=42, type=int)
 parser.add_argument('--cudnn_enabled', default=1, type=int)
-parser.add_argument('--model_name', default='QAcombine')
 parser.add_argument('--description', default='', type=str)
 parser.add_argument('--load_model', default=False, action='store_true')
 
@@ -357,6 +357,15 @@ if __name__ == "__main__":
     elif args.model_name == 'QAse':
         import models.QAse as net
         model = net.QAse(hidden_size = args.hidden_size, drop_rate = args.droprate,
+                         num_layers = args.num_layers,
+                         num_layers_cross = args.num_layers_cross,
+                         heads = args.heads, embd_dim=args.fp_embd_dim,
+                         word_embd_dim=args.fp_word_embd_dim,
+                         num_concepts=args.num_concepts)
+
+    elif args.model_name == 'SEMH':
+        import models.SEmultiHead as net
+        model = net.SEMH(hidden_size = args.hidden_size, drop_rate = args.droprate,
                          num_layers = args.num_layers,
                          num_layers_cross = args.num_layers_cross,
                          heads = args.heads, embd_dim=args.fp_embd_dim,

@@ -153,6 +153,15 @@ if __name__ == "__main__":
                          word_embd_dim=params.fp_word_embd_dim,
                          num_concepts=params.num_concepts)
 
+    elif args.model_name == 'QAse':
+        import models.QAse as net
+        model = net.QAse(hidden_size = params.hidden_size, drop_rate = params.droprate,
+                         num_layers = params.num_layers,
+                         num_layers_cross = params.num_layers_cross,
+                         heads = params.heads, embd_dim=params.fp_embd_dim,
+                         word_embd_dim=params.fp_word_embd_dim,
+                         num_concepts=params.num_concepts)
+
 
 
     print("loading the model %s...." % args.best_model)

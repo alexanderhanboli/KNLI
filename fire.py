@@ -8,15 +8,15 @@ import argparse
 
 parser = argparse.ArgumentParser()
 # params
-parser.add_argument('--model_name', default='QAconcept')
-parser.add_argument('--description', default='--NEW--', type=str)
-parser.add_argument('--gpu', type=str, default='0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15', help='used gpu')
+parser.add_argument('--model_name', default='SEMH')
+parser.add_argument('--description', default='==NEW==', type=str)
+parser.add_argument('--gpu', type=str, default='1,2,3,4,5,6,7,8,9,10,11,12,13,14,15', help='used gpu')
 # parser.add_argument('--gpu', type=str, default='0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15', help='used gpu')
 parser.add_argument('--cp',  default=False, action='store_true')
 parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
 parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
-parser.add_argument('--n_epochs', default=5, type=int)
+parser.add_argument('--n_epochs', default=10, type=int)
 parser.add_argument('--concept_attention', default='full', type=str, choices=['full', 'easy'])
 # test data
 # parser.add_argument('--ftest', default='hho_RT_new_splits.json')
@@ -92,15 +92,15 @@ if __name__ == "__main__":
         opt['heads'] = choice([5, 6]) # divisible for 300
         opt['droprate'] =  choice([0.10])
         opt['num_layers'] = choice([1,2,3])
-        opt['num_layers_cross'] = choice([1,2,3])
+        opt['num_layers_cross'] = choice([1,2])
         opt['sharpening'] = choice([False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1
         opt['print_every'] = 2000
         opt['loader_num_workers'] = 4
-        opt['batch_size'] = choice([8,16])
+        opt['batch_size'] = choice([8,16,32])
         opt['checkpoint_every'] = 20
-        opt['seed_random'] = 42 #np.random.randint(100, 10000)
+        opt['seed_random'] = 777 #np.random.randint(100, 10000)
         # opt['lr_decay'] = choice([10**uniform(-1.2,-.01), 1])
         opt['log_id'] = random_id
         #opt['fp_embd_dim'] = 100

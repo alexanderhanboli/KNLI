@@ -97,11 +97,11 @@ class BatchDataLoader(Dataset):
                             
                     if query_lemma[i].lower() != answer_lemma[j].lower():
                         if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
-                            concept_qa[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]] / sum(self.concept_dict[query_lemma[i]][answer_lemma[j]])
+                            concept_qa[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
                             # print("\rExample {}:\nThe premise is {}\nhypothesis is {}\nword one lemma is {}\nword two lemma is {}\nword one is {}\nword two is {}\n".format(
                             #         idx, premise, hypothesis, query_lemma[i], answer_lemma[j], widx, widy))
                         if answer_lemma[j] in self.concept_dict and query_lemma[i] in self.concept_dict[answer_lemma[j]]:
-                            concept_aq[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]] / sum(self.concept_dict[answer_lemma[j]][query_lemma[i]])
+                            concept_aq[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]]
 
         # create masks
         query_mask = build_mask(len(query), self.max_q_len)

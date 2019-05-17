@@ -203,79 +203,71 @@ class MultiHeadedAttn(nn.Module):
 
         return out
 
-class SimAttn(nn.Module):
 
-    def __init__(self, d_model=300, dropout=0.1, num_concepts=5):
+class MHSEAttn(nn.Module):
+
+    def __init__(self, heads=5, d_model=300, dropout=0.1):
         "Take in number of heads, model size, and dropout rate."
-        super(SimAttn, self).__init__()
-        
-        self.d_k = d_model
+        super(MHSEAttn, self).__init__()
+        assert d_model % heads == 0
+        # We assume d_v always equals d_k
+        self.d_k = d_model // heads
+        self.heads = heads
+
+        ## Linear layers for multi-head attention
+        self.fwQ  = nn.Linear(d_model, d_model) # for the query
+        self.fwK  = nn.Linear(d_model, d_model) # for the key
+        self.fwV  = nn.Linear(d_model, d_model) # for the answer
+        # W0
+        self.fwMH = nn.Linear(d_model, d_model) # output linear layer
+
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
-        self.num_concepts = num_concepts
-        # self.norm = LayerNorm(d_model, eps=1e-12)
 
-        self.concepts_left = nn.Linear(d_model, d_model * num_concepts, bias=False)
-        self.concepts_right = nn.Linear(d_model, d_model * num_concepts, bias=False)
+        self.norm = LayerNorm(d_model, eps=1e-12)
 
-        # self.out = nn.Linear(d_model, d_model)
-
-    def forward(self, query, key, value, qa_concept, aq_concept, mask=None):
+    def forward(self, qa_concept, value, lambd=5.0, mask=None):
         '''
             query, key, value are B*T*D
             B: is batch size
             T: is sequence length
             D: is model dimension
-            qa_concept: [B, T1, T2, 5]
-            aq_concept: [B, T2, T1, 5]
+            qa_concept: [B, T1, T2, H]
         '''
         if mask is not None:
             mask = mask.unsqueeze(1) # [B, 1, T]
+            mask = mask.unsqueeze(1) # [B, 1, 1, T]
 
-        batch_size = query.size(0)
+        batch_size = value.size(0)
 
-        if qa_concept is not None and aq_concept is not None:
-            qa = qa_concept.unsqueeze(4) # [B, T1, T2, 5, 1]
-            aq = aq_concept.unsqueeze(4) # [B, T2, T1, 5, 1]
+        query = self.fwQ(query) # [B, T, D]
+        key   = self.fwK(key)
+        value = self.fwV(value)
 
-            query_res = self.concepts_left(query).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T1, 1, 5, D]
-            query_res = torch.sum(query_res * qa, dim=3, keepdim=False) # [B, T1, T2, D]
-            query_res = self.dropout(query_res)
-            query = query.unsqueeze(2) + query_res # [B, T1, T2, D]
+        query = query.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, T, H, dk]
+        key   = key.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
+        value = value.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, H, T2, d_k]
 
-            key_res = self.concepts_right(key).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T2, 1, 5, D]
-            key_res = torch.sum(key_res * aq, dim=3, keepdim=False) # [B, T2, T1, D]
-            key_res = self.dropout(key_res)
-            key = key.unsqueeze(2) + key_res # [B, T2, T1, D]
-            key = key.transpose(1, 2) # [B, T1, T2, D]
+        scores = torch.matmul(query, key.transpose(-2, -1)) \
+             / math.sqrt(self.d_k) # [B, H, T1, T2]
 
-            value_res = self.concepts_right(value).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T2, 1, 5, D]
-            value_res = torch.sum(value_res * aq, dim=3, keepdim=False) # [B, T2, T1, D]
-            value_res = self.dropout(value_res)
-            value = value.unsqueeze(2) + value_res # [B, T2, T1, D]
-            value = value.transpose(1, 2) # [B, T1, T2, D]
+        scores = scores + lambd * qa_concept.permute(0, 3, 1, 2) # [B, H, T1, T2]
 
-            # calculate scores
-            scores = torch.sum(query * key, dim=-1, keepdim=False) / math.sqrt(self.d_k) # [B, T1, T2]
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e9)
+        self.attn = self.dropout(F.softmax(scores, dim = -1)) # [B, H, T1, T2]
 
-            # add mask
-            if mask is not None:
-                scores = scores.masked_fill(mask == 0, -1e9)
-            p_attn = F.softmax(scores, dim = -1) # [B, T1, T2]
+        x = torch.matmul(self.attn, value) # [B, H, T1, d_k]
 
-            # apply dropout
-            p_attn = self.dropout(p_attn)
+        x = x.transpose(1, 2).contiguous() \
+             .view(batch_size, -1, self.heads * self.d_k)
 
-            # aligned query tokens
-            pp = p_attn.unsqueeze(3) # [B, T1, T2, 1]
-            q_align = torch.sum(pp * value, dim=2, keepdim=False) # [B, T1, d_k]
-            # q_align = self.out(q_align) # [B, T1, d_k]
-            # q_align = self.norm(q_align)
+        res = self.dropout(self.fwMH(x)) # [batch_size, sentence_length, d_model]
 
-            # aligned concept embeddings    
-            concept_align = torch.sum(pp * qa_concept, dim=2, keepdim=False) # [B, T1, 5]
+        x = x + res
+        x = self.norm(x)
 
-        return q_align, concept_align
+        return x
 
 class Highway(nn.Module):
     def __init__(self, h_size, h_out, num_layers=2):
@@ -378,17 +370,12 @@ class Classifier(nn.Module):
 ##############################
 #### QAse model
 ##############################
-class QAse(nn.Module):
+class SEMH(nn.Module):
 
     def __init__(self, hidden_size = 512, drop_rate = 0.1,
                  num_layers = 4, num_layers_cross = 2, heads = 4,
                  embd_dim = 300, word_embd_dim = 300, num_concepts = 5):
-        '''
-            Simple baseline model:
-            This model use a simple summation of Fasttext word embeddings to represent each question in the pair.
-            Need to make sure that embd_dim % heads == 0.
-        '''
-        super(QAse, self).__init__()
+        super(SEMH, self).__init__()
         c = copy.deepcopy
 
         if word_embd_dim == None:
@@ -400,20 +387,15 @@ class QAse(nn.Module):
         self.num_layers = num_layers
         self.heads = heads
         self.hidden_size = hidden_size
+        self.num_concepts = num_concepts
 
         # layers
         self.highway = Highway(h_size=embd_dim, h_out=embd_dim, num_layers=2)
 
-        self.coattention_q = SimAttn(d_model=embd_dim, dropout=drop_rate, 
-                                    num_concepts=num_concepts)
+        self.coattention_q = MHSEAttn(heads=num_concepts, d_model=embd_dim, dropout=drop_rate)
         self.coattention_a = c(self.coattention_q)
 
         self.position = PositionalEncoding(d_model=embd_dim, dropout=drop_rate)
-
-        self.pre_q = nn.Linear(4*embd_dim, 4*embd_dim)
-        self.pre_a = nn.Linear(4*embd_dim, 4*embd_dim)
-        self.proj_q = nn.Linear(4*embd_dim, embd_dim, bias=False)
-        self.proj_a = nn.Linear(4*embd_dim, embd_dim, bias=False)
 
         attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
         ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
@@ -425,19 +407,11 @@ class QAse(nn.Module):
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
         self.encoder_aa = c(self.encoder_qq)
 
-        self.fc_q = nn.Linear(embd_dim, hidden_size)
-        self.fc_a = nn.Linear(embd_dim, hidden_size)
-        self.weight_q = nn.Linear(hidden_size, 1)
-        self.weight_a = nn.Linear(hidden_size, 1)
-
         self.proj = nn.Linear(4*embd_dim, hidden_size)
-
         self.classifier = Classifier(hidden_size=hidden_size, dropout=drop_rate)
 
         # initialize weights
         self.apply(self.initialize_weights)
-        self.proj_q.apply(self.orthogonal_weights)
-        self.proj_a.apply(self.orthogonal_weights)
         self.proj.apply(self.orthogonal_weights)
 
     def initialize_weights(self, module):
@@ -496,32 +470,12 @@ class QAse(nn.Module):
         answer = self.encoder_a(answer, amask)
 
         # alignment (can add external knowledge here)
-        question_align, _ = self.coattention_q(question, answer, answer, qa_concept, aq_concept, amask) # [B, T, D]
-        answer_align, _ = self.coattention_a(answer, question, question, aq_concept, qa_concept, qmask)
-
-        # concatenation
-        question = torch.cat( (question, question_align, question-question_align, question.mul(question_align)), -1 )
-        answer = torch.cat( (answer, answer_align, answer-answer_align, answer.mul(answer_align)), -1 )
-
-        # project to lower dim
-        question = self.proj_q(self.drop(self.pre_q(question)))
-        answer = self.proj_a(self.drop(self.pre_a(answer)))
+        question = self.coattention_q(qa_concept, answer, 5.0, amask) # [B, T, D]
+        answer = self.coattention_a(aq_concept, question, 5.0, qmask)
 
         # self-attention again
         question = self.encoder_qq(question, qmask) # encode with self-attention # [B, T, D]
         answer = self.encoder_aa(answer, amask)
-
-        # predict word importance
-        # q_uweight = self.weight_q(self.drop(gelu(self.fc_q(q_concept_align)))) # [B, T, 1]
-        # a_uweight = self.weight_a(self.drop(gelu(self.fc_a(a_concept_align))))
-        # if qmask is not None:
-        #     q_weight = F.softmax(q_uweight.masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 1]
-        # else:
-        #     q_weight = F.softmax(q_uweight, dim=1) # [B, T, 1]
-        # if amask is not None:
-        #     a_weight = F.softmax(a_uweight.masked_fill(amask.unsqueeze(2) == 0, -1e9), dim=1) # [B, T, 1]
-        # else:
-        #     a_weight = F.softmax(a_uweight, dim=1) # [B, T, 1]
 
         # pooling
         q_ave = torch.mean( question, dim=1, keepdim=False ) # [B, D]
