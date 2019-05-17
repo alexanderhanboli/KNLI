@@ -75,33 +75,33 @@ class BatchDataLoader(Dataset):
             # a -> q
             concept_aq = np.zeros((self.max_ans_len, self.max_q_len, self.num_concepts), dtype = np.float32) # [T2, T1, d]
 
-        # process query (premise)
-        for i, widx in enumerate(query):
-            if i >= self.max_q_len:
-                break
-
-            try:
-                vecQ1[i,:] = self.embd_dict[widx] # get the word embedding for premise
-            except:
-                pass
-
-            for j, widy in enumerate(answer):
-                if j >= self.max_ans_len:
+            # process premise and hypothesis
+            for i, widx in enumerate(query):
+                if i >= self.max_q_len:
                     break
 
-                if i == 0:
-                    try:
-                        vecQ2[j,:] = self.embd_dict[widy] # get the word embedding for hypothesis
-                    except:
-                        pass
-                        
-                if self.concept_dict is not None and query_lemma[i].lower() != answer_lemma[j].lower():
-                    if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
-                        concept_qa[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
-                        # print("\rExample {}:\nThe premise is {}\nhypothesis is {}\nword one lemma is {}\nword two lemma is {}\nword one is {}\nword two is {}\n".format(
-                        #         idx, premise, hypothesis, query_lemma[i], answer_lemma[j], widx, widy))
-                    if answer_lemma[j] in self.concept_dict and query_lemma[i] in self.concept_dict[answer_lemma[j]]:
-                        concept_aq[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]]
+                try:
+                    vecQ1[i,:] = self.embd_dict[widx] # get the word embedding for premise
+                except:
+                    pass
+
+                for j, widy in enumerate(answer):
+                    if j >= self.max_ans_len:
+                        break
+
+                    if i == 0:
+                        try:
+                            vecQ2[j,:] = self.embd_dict[widy] # get the word embedding for hypothesis
+                        except:
+                            pass
+                            
+                    if query_lemma[i].lower() != answer_lemma[j].lower():
+                        if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
+                            concept_qa[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]] / sum(self.concept_dict[query_lemma[i]][answer_lemma[j]])
+                            # print("\rExample {}:\nThe premise is {}\nhypothesis is {}\nword one lemma is {}\nword two lemma is {}\nword one is {}\nword two is {}\n".format(
+                            #         idx, premise, hypothesis, query_lemma[i], answer_lemma[j], widx, widy))
+                        if answer_lemma[j] in self.concept_dict and query_lemma[i] in self.concept_dict[answer_lemma[j]]:
+                            concept_aq[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]] / sum(self.concept_dict[answer_lemma[j]][query_lemma[i]])
 
         # create masks
         query_mask = build_mask(len(query), self.max_q_len)

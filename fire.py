@@ -105,7 +105,7 @@ if __name__ == "__main__":
         opt['log_id'] = random_id
         #opt['fp_embd_dim'] = 100
         #opt['fp_embd_type'] = 'context'
-        opt['beta1'] = choice([0.5])
+        opt['beta1'] = choice([0.5, 0.9])
         opt['beta2'] = choice([0.999])
 
         drop = str(opt['droprate']-int(opt['droprate']))[1:][1]

@@ -32,9 +32,9 @@ parser.add_argument('--split', default='test')
 parser.add_argument('--model_name', default='QAconcept', type=str)
 
 #others
-parser.add_argument('--best_model', default='./mfiles/qaconcept_1305447_B32_L2_H4_D1_March-23-2019-09:52PM__best.pt')
+parser.add_argument('--best_model', default='./check_points/qaconcept_==easy==_9507775_B8_L1_H6_D1_May-10-2019-03:50PM__best.pt')
 parser.add_argument('--loader_num_workers', type=int, default=4)
-parser.add_argument('--batch_size',  type=int, default=16)
+parser.add_argument('--batch_size',  type=int, default=32)
 
 #printing information
 parser.add_argument('--print_mode', default='json', choices=['json', 'simple'])

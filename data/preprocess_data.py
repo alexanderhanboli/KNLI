@@ -278,11 +278,9 @@ def build_dictionary(filepaths, dst_path, lowercase=False, wordnet=None, remove_
     worddict = OrderedDict()
     worddict['_PAD_'] = 0 # default, padding 
     worddict['_UNK_'] = 1 # out-of-vocabulary
-    worddict['_BOS_'] = 2 # begin of sentence token
-    worddict['_EOS_'] = 3 # end of sentence token
 
     for ii, ww in enumerate(sorted_words):
-        worddict[ww] = ii + 4
+        worddict[ww] = ii + 2
 
     with open(dst_path, 'w') as f:
         pkl.dump(worddict, f)
@@ -490,13 +488,13 @@ if __name__ == '__main__':
     with open(os.path.join('./sequence_and_features', 'snli_data.json'), 'w+') as outfile:
         json.dump(data, outfile)
 
-    # print('6. build dictionary for word sequence and lemma sequence from training set\n')
-    # build_dictionary([os.path.join(dst_dir, 'premise_snli_1.0_train_token.txt'), 
-    #                   os.path.join(dst_dir, 'hypothesis_snli_1.0_train_token.txt')], 
-    #                   os.path.join(dst_dir, 'vocab_cased.pkl'), wordnet=word_id_num, remove_phrase=True)
-    # build_dictionary([os.path.join(dst_dir, 'premise_snli_1.0_train_lemma.txt'), 
-    #                   os.path.join(dst_dir, 'hypothesis_snli_1.0_train_lemma.txt')], 
-    #                   os.path.join(dst_dir, 'vocab_cased_lemma.pkl'), wordnet=word_id_num, remove_phrase=True)
+    print('6. build dictionary for word sequence and lemma sequence from training set\n')
+    build_dictionary([os.path.join(dst_dir, 'premise_snli_1.0_train_token.txt'), 
+                      os.path.join(dst_dir, 'hypothesis_snli_1.0_train_token.txt')], 
+                      os.path.join(dst_dir, 'vocab_cased.pkl'), wordnet=word_id_num, remove_phrase=True)
+    build_dictionary([os.path.join(dst_dir, 'premise_snli_1.0_train_lemma.txt'), 
+                      os.path.join(dst_dir, 'hypothesis_snli_1.0_train_lemma.txt')], 
+                      os.path.join(dst_dir, 'vocab_cased_lemma.pkl'), wordnet=word_id_num, remove_phrase=True)
 
     print('7. convert to pkl format based on lemma dictionary\n')
     # dict_path = os.path.join(dst_dir, 'vocab_cased_lemma.pkl')
