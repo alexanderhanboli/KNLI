@@ -108,3 +108,4 @@ data/**/
 results/
 check_points/
 logs/
+outputs/

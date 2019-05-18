@@ -218,7 +218,7 @@ class SimAttn(nn.Module):
         self.concepts_left = nn.Linear(d_model, d_model * num_concepts, bias=False)
         self.concepts_right = nn.Linear(d_model, d_model * num_concepts, bias=False)
 
-        # self.out = nn.Linear(d_model, d_model)
+        self.out = nn.Linear(d_model, d_model)
 
     def forward(self, query, key, value, qa_concept, aq_concept, mask=None):
         '''
@@ -269,13 +269,13 @@ class SimAttn(nn.Module):
             # aligned query tokens
             pp = p_attn.unsqueeze(3) # [B, T1, T2, 1]
             q_align = torch.sum(pp * value, dim=2, keepdim=False) # [B, T1, d_k]
-            # q_align = self.out(q_align) # [B, T1, d_k]
+            q_align = self.out(q_align) # [B, T1, d_k]
             q_align = self.norm(q_align)
 
             # aligned concept embeddings    
-            concept_align = torch.sum(pp * qa_concept, dim=2, keepdim=False) # [B, T1, 5]
+            # concept_align = torch.sum(pp * qa_concept, dim=2, keepdim=False) # [B, T1, 5]
 
-        return q_align, concept_align
+        return q_align, None
 
 class Highway(nn.Module):
     def __init__(self, h_size, h_out, num_layers=2):
