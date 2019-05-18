@@ -325,12 +325,13 @@ class Encoder(nn.Module):
 
         super(Encoder, self).__init__()
         self.layers = clones(layer, N)
+        self.norm = LayerNorm(layer.size, eps=1e-12)
 
     def forward(self, x, mask=None):
         "Pass the input (and mask) through each layer in turn."
         for layer in self.layers:
             x = layer(x, mask)
-        return x
+        return self.norm(x)
 
 class EncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
@@ -345,18 +346,18 @@ class EncoderLayer(nn.Module):
         self.size = size
 
     def forward(self, x, mask=None):
-
         # self attention layer w/ resnet
-        res = self.self_attn(x, x, x, mask)
+        res = self.norm_in(x)
+        res = self.self_attn(res, res, res, mask)
         res = self.dropout(res)
         x = x + res
 
         # feed forward layer w/ resnet
-        res = self.norm_in(x)
+        res = self.norm_out(x)
         res = self.feed_forward(res)
         res = self.dropout(res)
         x = x + res
-        x = self.norm_out(x)
+
         return x
 
 class Classifier(nn.Module):
