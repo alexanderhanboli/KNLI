@@ -29,7 +29,7 @@ class BatchDataLoader(Dataset):
      This data loader loads data.
      This supports any batch size.
     '''
-    def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_q_len = 90, 
+    def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_q_len = 90,
                  max_ans_len = 70, emd_dim = 300, num_concepts = 5):
 
         self.embd_dict = embd_dict
@@ -94,14 +94,14 @@ class BatchDataLoader(Dataset):
                             vecQ2[j,:] = self.embd_dict[widy] # get the word embedding for hypothesis
                         except:
                             pass
-                            
-                    if query_lemma[i].lower() != answer_lemma[j].lower():
-                        if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
-                            concept_qa[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
-                            # print("\rExample {}:\nThe premise is {}\nhypothesis is {}\nword one lemma is {}\nword two lemma is {}\nword one is {}\nword two is {}\n".format(
-                            #         idx, premise, hypothesis, query_lemma[i], answer_lemma[j], widx, widy))
-                        if answer_lemma[j] in self.concept_dict and query_lemma[i] in self.concept_dict[answer_lemma[j]]:
-                            concept_aq[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]]
+
+                    # if query_lemma[i].lower() != answer_lemma[j].lower():
+                    if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
+                        concept_qa[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
+                        # print("\rExample {}:\nThe premise is {}\nhypothesis is {}\nword one lemma is {}\nword two lemma is {}\nword one is {}\nword two is {}\nconcept is {}\n".format(
+                        #         idx, premise, hypothesis, query_lemma[i], answer_lemma[j], widx, widy, concept_qa[i, j, :]))
+                    if answer_lemma[j] in self.concept_dict and query_lemma[i] in self.concept_dict[answer_lemma[j]]:
+                        concept_aq[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]]
 
         # create masks
         query_mask = build_mask(len(query), self.max_q_len)

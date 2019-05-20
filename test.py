@@ -64,10 +64,10 @@ def evaluate(data, params, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=params.sharpening, 
+        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=params.sharpening,
                                 concept_attention=params.concept_attention, alpha=params.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=params.sharpening, 
+        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=params.sharpening,
                                 concept_attention=params.concept_attention, alpha=params.alpha) # [B, 3]
 
     # calculate word importance
@@ -82,26 +82,21 @@ def evaluate(data, params, use_mask = True, print_out = False):
     ############################
     pred_score, pred_class = torch.max(matching.cpu(), 1) # [B], [B]
 
-    # pdb.set_trace()
-
     label = torch.tensor(label, dtype=torch.int64).cpu() # [B]
 
     comp = (pred_class == label) # [B]
     correct  = comp.sum().data.item() # scalar
-    precision = metrics.precision_score(label.numpy(), pred_class.numpy(), average=None)
-    recall = metrics.recall_score(label.numpy(), pred_class.numpy(), average=None)
-    f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), average=None)
+    precision = metrics.precision_score(label.numpy(), pred_class.numpy(), labels=[0,1,2], average=None)
+    recall = metrics.recall_score(label.numpy(), pred_class.numpy(), labels=[0,1,2], average=None)
+    f1 = metrics.f1_score(label.numpy(), pred_class.numpy(), labels=[0,1,2], average=None)
 
-    if correct < 8:
-        print('predicted class is {}, label is {}'.format(pred_class, label))
+    # if correct < 8:
+    #     print('predicted class is {}, label is {}'.format(pred_class, label))
 
     # print out some examples to console
-    if print_out:
-        print("\rf1 is {}, precision is {}, recall is {}, accuracy is {}".format(f1, precision, recall, 1.0*correct/len(label)))
-        print('\r-----------------------------------------------------------\n')
-
-    # not critical, but just in case
-    del q1, a1, premise, hypothesis, label
+    # if print_out:
+    #     print("\rf1 is {}, precision is {}, recall is {}, accuracy is {}".format(f1, precision, recall, 1.0*correct/len(label)))
+    #     print('\r-----------------------------------------------------------\n')
 
     return loss_eval.data.item(), correct, f1, precision, recall, b_size
 
@@ -217,9 +212,9 @@ if __name__ == "__main__":
 
     test_loss = 0.0
     test_correct = 0.0
-    # test_precision = [0.0, 0.0, 0.0]
-    # test_recall = [0.0, 0.0, 0.0]
-    # test_f1 = [0.0, 0.0, 0.0]
+    test_precision = np.zeros(3)
+    test_recall = np.zeros(3)
+    test_f1 = np.zeros(3)
     total_data = 0.0
 
     for j, sample in enumerate(test_loader, 0):
@@ -232,15 +227,16 @@ if __name__ == "__main__":
 
         test_loss += test_stat[0]
         test_correct += test_stat[1]
-        # test_f1 += test_stat[2]
-        # test_precision += test_stat[3]
-        # test_recall += test_stat[4]
+        test_f1 += test_stat[2]
+        test_precision += test_stat[3]
+        test_recall += test_stat[4]
         total_data += test_stat[5]
 
+
     test_accuracy = test_correct / total_data
-    # test_f1 = test_f1 / len(test_loader)
-    # test_precision = test_precision / len(test_loader)
-    # test_recall = test_recall / len(test_loader)
+    test_f1 = test_f1 / len(test_loader)
+    test_precision = test_precision / len(test_loader)
+    test_recall = test_recall / len(test_loader)
     test_loss = test_loss / len(test_loader)
 
     results['accuracy'] = test_accuracy
@@ -249,7 +245,10 @@ if __name__ == "__main__":
     # results['recall'] = test_recall
     results['loss'] = test_loss
 
-    print('the final accuracy is {}'.format(test_accuracy))
+    print('the final accuracy is {}\n'.format(test_accuracy))
+    print('the average F1 is {}\n'.format(test_f1))
+    print('the average precision is {}\n'.format(test_precision))
+    print('the average recall is {}\n'.format(test_recall))
 
     # save sim_results
     if not os.path.exists('./outputs'):

@@ -99,7 +99,7 @@ def createFileName(args):
     # create folder if not there
     create_dir(args.check_point_dir)
 
-    return os.path.join(args.check_point_dir, str.lower(args.model_name) + "_" + str.lower(args.description) + "_" + 
+    return os.path.join(args.check_point_dir, str.lower(args.model_name) + "_" + str.lower(args.description) + "_" +
                         args.log_id + '_B' + str(args.batch_size) + '_L' + str(args.num_layers) +
                         '_H' + str(args.heads) + '_D' + str(args.droprate-int(args.droprate))[1:][1])
 
@@ -127,7 +127,7 @@ def train(data, use_mask = True):
     # setup the optim
     if args.opt == 'original':
         optimizer.optimizer.zero_grad()
-    elif args.opt == 'openai':
+    else:
         optimizer.zero_grad()
     loss = 0.0
 
@@ -135,10 +135,10 @@ def train(data, use_mask = True):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening, 
+        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening,
                                concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening, 
+        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening,
                                concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
 
     # calculate loss
@@ -172,10 +172,10 @@ def evaluate(data, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening, 
+        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening,
                                 concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening, 
+        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening,
                                 concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
 
     # calculate word importance
@@ -416,7 +416,7 @@ if __name__ == "__main__":
         from misc.bert_optimization import BertAdam
 
         n_updates_total = len(train_loader) * args.n_epochs
-        
+
         optimizer = BertAdam(filter(lambda p: p.requires_grad, model.parameters()),
                                lr=args.lr,
                                warmup=args.lr_warmup,
