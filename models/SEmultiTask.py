@@ -88,13 +88,15 @@ def attention(query, key, value, mask=None, dropout=None):
              / math.sqrt(d_k) # [B, H, T1, T2]
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
-    p_attn = F.softmax(scores, dim = -1) # [B, H, T1, T2]
+
+    p_attn = nn.Softmax(dim=-1)(scores) # [B, H, T1, T2]
+    log_p_attn = nn.LogSoftmax(dim=-1)(scores)
 
     # apply dropout
     if dropout is not None:
         p_attn = dropout(p_attn)
 
-    return torch.matmul(p_attn, value), p_attn
+    return torch.matmul(p_attn, value), log_p_attn
 
 """LayerNorm
 """
@@ -188,7 +190,7 @@ class MultiHeadedAttn(nn.Module):
         # Step 3) do attention
         # query, key, value are all of the shape [B, heads, T, d_k]
         ##
-        x, self.attn  = attention(query, key, value, mask=mask, dropout=self.dropout)
+        x, self.attn  = attention(query, key, value, mask=mask, dropout=self.dropout) # attn [B, H, T1, T2]
 
         ##
         # Step 4.1) "Concat" using a view
@@ -201,70 +203,7 @@ class MultiHeadedAttn(nn.Module):
         ##
         out = self.fwMH(x) # [batch_size, sentence_length, d_model]
 
-        return out
-
-
-class MHSEAttn(nn.Module):
-
-    def __init__(self, heads=5, d_model=300, dropout=0.1):
-        "Take in number of heads, model size, and dropout rate."
-        super(MHSEAttn, self).__init__()
-        assert d_model % heads == 0
-        # We assume d_v always equals d_k
-        self.d_k = d_model // heads
-        self.heads = heads
-
-        ## Linear layers for multi-head attention
-        self.fwQ  = nn.Linear(d_model, d_model) # for the query
-        self.fwK  = nn.Linear(d_model, d_model) # for the key
-        self.fwV  = nn.Linear(d_model, d_model) # for the answer
-        # W0
-        self.fwMH = nn.Linear(d_model, d_model) # output linear layer
-
-        self.attn = None
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, qa_concept, query, key, value, lambd=5.0, mask=None):
-        '''
-            query, key, value are B*T*D
-            B: is batch size
-            T: is sequence length
-            D: is model dimension
-            qa_concept: [B, T1, T2, H]
-        '''
-        if mask is not None:
-            mask = mask.unsqueeze(1) # [B, 1, T]
-            mask = mask.unsqueeze(1) # [B, 1, 1, T]
-
-        batch_size = value.size(0)
-
-        # Mappings for multihead
-        query = self.fwQ(query) # [B, T, D]
-        key   = self.fwK(key)
-        query = query.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, T, H, dk]
-        key   = key.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
-        value = self.fwV(value)
-        value = value.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, H, T2, d_k]
-
-        # Calculate scores
-        scores = torch.matmul(query, key.transpose(-2, -1)) \
-            / math.sqrt(self.d_k) # [B, H, T1, T2]
-        scores = scores + lambd * qa_concept.permute(0, 3, 1, 2) # [B, H, T1, T2]
-
-        # Add mask
-        if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e9)
-
-        self.attn = self.dropout(F.softmax(scores, dim = -1)) # [B, H, T1, T2]
-
-        x = torch.matmul(self.attn, value) # [B, H, T1, d_k]
-
-        x = x.transpose(1, 2).contiguous() \
-             .view(batch_size, -1, self.heads * self.d_k)
-
-        out = self.fwMH(x) # [batch_size, sentence_length, d_model]
-
-        return out
+        return out, self.attn
 
 class Highway(nn.Module):
     def __init__(self, h_size, h_out, num_layers=2):
@@ -337,7 +276,7 @@ class EncoderLayer(nn.Module):
     def forward(self, x, mask=None):
         # self attention layer w/ resnet
         res = self.norm_in(x)
-        res = self.self_attn(res, res, res, mask)
+        res, _ = self.self_attn(res, res, res, mask)
         res = self.dropout(res)
         x = x + res
 
@@ -357,17 +296,14 @@ class CrEncoder(nn.Module):
         self.layers = clones(layer, N)
         self.norm = LayerNorm(layer.size, eps=1e-12)
 
-    def forward(self, x, m, qa_concept, qmask=None, amask=None, lambd=5.0):
+    def forward(self, x, m, qmask=None, amask=None):
         "Pass the input (and mask) through each layer in turn."
-        n_layers = len(self.layers)
-        for i, layer in enumerate(self.layers):
-            if i >= -1:
-                # do concept attention for the chosen layers
-                x = layer(x, m, qa_concept, qmask, amask, lambd)
-            else:
-                # ignore lambda and do normal attention
-                x = layer(x, m, qa_concept, qmask, amask, 0.0)
-        return self.norm(x)
+        attn_list = []
+        for layer in self.layers:
+            x, attn = layer(x, m, qmask, amask)
+            attn_list.append(attn)
+
+        return self.norm(x), attn_list
 
 class CrEncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
@@ -383,17 +319,17 @@ class CrEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.size = size
 
-    def forward(self, x, m, qa_concept, qmask=None, amask=None, lambd=1.0):
+    def forward(self, x, m, qmask=None, amask=None):
 
         # self attention layer w/ resnet
         res = self.norm_in(x)
-        res = self.self_attn(res, res, res, qmask)
+        res, _ = self.self_attn(res, res, res, qmask)
         res = self.dropout(res)
         x = x + res
 
         # cross attention
         res = self.norm_mid(x)
-        res = self.cross_attn(qa_concept, res, m, m, lambd, amask)
+        res, attn = self.cross_attn(res, m, m, amask)
         res = self.dropout(res)
         x = x + res
 
@@ -403,7 +339,7 @@ class CrEncoderLayer(nn.Module):
         res = self.dropout(res)
         x = x + res
 
-        return x
+        return x, attn
 
 class Classifier(nn.Module):
     def __init__(self, hidden_size, dropout):
@@ -424,12 +360,12 @@ class Classifier(nn.Module):
 ##############################
 #### QAse model
 ##############################
-class SEMH(nn.Module):
+class SEMultitask(nn.Module):
 
     def __init__(self, hidden_size = 512, drop_rate = 0.1,
                  num_layers = 4, num_layers_cross = 2, heads = 4,
                  embd_dim = 300, word_embd_dim = 300, num_concepts = 5):
-        super(SEMH, self).__init__()
+        super(SEMultitask, self).__init__()
         c = copy.deepcopy
 
         if word_embd_dim == None:
@@ -450,13 +386,12 @@ class SEMH(nn.Module):
 
         attn = MultiHeadedAttn(heads=heads, d_model=embd_dim, dropout=drop_rate)
         ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
-        seattn = MHSEAttn(heads=num_concepts, d_model=embd_dim, dropout=drop_rate)
 
         self.encoder_q = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers)
         self.encoder_a = c(self.encoder_q)
 
-        self.encoder_qa = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(seattn),
+        self.encoder_qa = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
                                                 feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
         self.encoder_aq = c(self.encoder_qa)
 
@@ -513,19 +448,20 @@ class SEMH(nn.Module):
                 aq_concept: [B, T2, T1, num_concepts]
         '''
         c = copy.deepcopy
+        q_attn_list, a_attn_list = None, None
 
         question = self.highway(question)
-        answer = self.highway(answer)
+        answer =   self.highway(answer)
 
         # input encoding
         question = self.position(question) # add positional encoding
-        answer = self.position(answer)
+        answer   = self.position(answer)
         question = self.encoder_q(question, qmask) # encode with self-attention
-        answer = self.encoder_a(answer, amask)
+        answer   = self.encoder_a(answer, amask)
 
         # self-attention again
-        question = self.encoder_qa(question, answer, qa_concept, qmask, amask, 50.0)
-        answer = self.encoder_aq(answer, question, aq_concept, amask, qmask, 50.0)
+        question, q_attn_list = self.encoder_qa(question, answer, qmask, amask)
+        answer, a_attn_list   = self.encoder_aq(answer, question, amask, qmask)
 
         # pooling
         q_ave = torch.mean( question, dim=1, keepdim=False ) # [B, D]
@@ -542,4 +478,4 @@ class SEMH(nn.Module):
 
         score = self.classifier(final) # [B, 3]
 
-        return score, None, None
+        return score, q_attn_list, a_attn_list

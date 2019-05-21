@@ -208,15 +208,21 @@ class SimAttn(nn.Module):
     def __init__(self, d_model=300, dropout=0.1, num_concepts=5):
         "Take in number of heads, model size, and dropout rate."
         super(SimAttn, self).__init__()
-        
+
         self.d_k = d_model
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
         self.num_concepts = num_concepts
         self.norm = LayerNorm(d_model, eps=1e-12)
 
-        self.concepts_left = nn.Linear(d_model, d_model * num_concepts, bias=False)
-        self.concepts_right = nn.Linear(d_model, d_model * num_concepts, bias=False)
+        self.query = nn.Linear(d_model, d_model)
+        self.key = nn.Linear(d_model, d_model)
+        self.value = nn.Linear(d_model, d_model)
+
+        self.concepts_left_1  = nn.Linear(d_model, d_model * num_concepts, bias=False)
+        self.concepts_right_1 = nn.Linear(d_model, d_model * num_concepts, bias=False)
+        self.concepts_left_0  = nn.Linear(d_model, d_model * num_concepts, bias=False)
+        self.concepts_right_0 = nn.Linear(d_model, d_model * num_concepts, bias=False)
 
         self.out = nn.Linear(d_model, d_model)
 
@@ -238,22 +244,30 @@ class SimAttn(nn.Module):
             qa = qa_concept.unsqueeze(4) # [B, T1, T2, 5, 1]
             aq = aq_concept.unsqueeze(4) # [B, T2, T1, 5, 1]
 
-            query_res = self.concepts_left(query).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T1, 1, 5, D]
-            query_res = torch.sum(query_res * qa, dim=3, keepdim=False) # [B, T1, T2, D]
-            query_res = self.dropout(query_res)
-            query = query.unsqueeze(2) + query_res # [B, T1, T2, D]
+            # Query
+            query_concept_1 = self.concepts_left_1(query).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T1, 1, 5, D]
+            query_concept_1 = torch.sum(query_concept_1 * qa, dim=3, keepdim=False) # [B, T1, T2, D]
+            query_concept_1 = self.dropout(query_concept_1) # [B, T1, T2, D]
 
-            key_res = self.concepts_right(key).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T2, 1, 5, D]
-            key_res = torch.sum(key_res * aq, dim=3, keepdim=False) # [B, T2, T1, D]
-            key_res = self.dropout(key_res)
-            key = key.unsqueeze(2) + key_res # [B, T2, T1, D]
+            query_concept_0 = self.concepts_left_0(query).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T1, 1, 5, D]
+            query_concept_0 = torch.sum(query_concept_0 * (1.0 - qa), dim=3, keepdim=False) # [B, T1, T2, D]
+            query_concept_0 = self.dropout(query_concept_0) # [B, T1, T2, D]
+
+            query = self.query(query).unsqueeze(2) + query_concept_0 + query_concept_1 # [B, T1, T2, D]
+
+            # Key/value
+            key_concept_1 = self.concepts_right_1(key).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T2, 1, 5, D]
+            key_concept_1 = torch.sum(key_concept_1 * aq, dim=3, keepdim=False) # [B, T2, T1, D]
+            key_concept_1 = self.dropout(key_concept_1)
+
+            key_concept_0 = self.concepts_right_0(key).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T2, 1, 5, D]
+            key_concept_0 = torch.sum(key_concept_0 * aq, dim=3, keepdim=False) # [B, T2, T1, D]
+            key_concept_0 = self.dropout(key_concept_0)
+
+            key = self.key(key).unsqueeze(2) + key_concept_0 + key_concept_1
             key = key.transpose(1, 2) # [B, T1, T2, D]
 
-            value_res = self.concepts_right(value).view(batch_size, -1, self.num_concepts, self.d_k).unsqueeze(2) # [B, T2, 1, 5, D]
-            value_res = torch.sum(value_res * aq, dim=3, keepdim=False) # [B, T2, T1, D]
-            value_res = self.dropout(value_res)
-            value = value.unsqueeze(2) + value_res # [B, T2, T1, D]
-            value = value.transpose(1, 2) # [B, T1, T2, D]
+            value = self.value(value).unsqueeze(2)
 
             # calculate scores
             scores = torch.sum(query * key, dim=-1, keepdim=False) / math.sqrt(self.d_k) # [B, T1, T2]
@@ -272,7 +286,7 @@ class SimAttn(nn.Module):
             q_align = self.out(q_align) # [B, T1, d_k]
             q_align = self.norm(q_align)
 
-            # aligned concept embeddings    
+            # aligned concept embeddings
             # concept_align = torch.sum(pp * qa_concept, dim=2, keepdim=False) # [B, T1, 5]
 
         return q_align, None
@@ -367,7 +381,7 @@ class Classifier(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
         self.simf = nn.Linear(hidden_size, 3)
-        
+
     def forward(self, input):
         '''
         x: [B, T, D]
@@ -405,7 +419,7 @@ class QAse(nn.Module):
         # layers
         self.highway = Highway(h_size=embd_dim, h_out=embd_dim, num_layers=2)
 
-        self.coattention_q = SimAttn(d_model=embd_dim, dropout=drop_rate, 
+        self.coattention_q = SimAttn(d_model=embd_dim, dropout=drop_rate,
                                     num_concepts=num_concepts)
         self.coattention_a = c(self.coattention_q)
 
@@ -472,7 +486,7 @@ class QAse(nn.Module):
             for p in module:
                 self.orthogonal_weights(p)
 
-    def forward(self, question, answer, qmask=None, amask=None, 
+    def forward(self, question, answer, qmask=None, amask=None,
                 qa_concept=None, aq_concept=None, sharpening=None, concept_attention=None, alpha=None):
         '''
          input : batch, seq_len

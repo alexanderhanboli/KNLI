@@ -135,15 +135,24 @@ def train(data, use_mask = True):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening,
-                               concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
+        matching, q_attn_list, a_attn_list = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening,
+                               concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3], list of [B, H, T1, T2]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening,
+        matching, q_attn_list, a_attn_list = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening,
                                concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
 
     # calculate loss
-    criterion = nn.CrossEntropyLoss()
-    loss = criterion(matching.float(), label.long())
+    if args.model_name.lower() == 'semultitask':
+        CE = nn.CrossEntropyLoss()
+        KL = nn.KLDivLoss()
+        loss = CE(matching.float(), label.long())
+        for qa in q_attn_list:
+            loss = loss + 0.1 * KL(qa[:,:args.num_concepts,:,:].float(), concept_qa.permute(0,3,1,2).float())
+        for aq in a_attn_list:
+            loss = loss + 0.1 * KL(aq[:,:args.num_concepts,:,:].float(), concept_aq.permute(0,3,1,2).float())
+    else:
+        criterion = nn.CrossEntropyLoss()
+        loss = criterion(matching.float(), label.long())
 
     # do backprop and udpate
     loss.backward()
@@ -172,15 +181,24 @@ def evaluate(data, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening,
+        matching, q_attn_list, a_attn_list = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening,
                                 concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening,
+        matching, q_attn_list, a_attn_list = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening,
                                 concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
 
     # calculate word importance
-    criterion = nn.CrossEntropyLoss()
-    loss_eval = criterion(matching.float(), label.long())
+    if args.model_name.lower() == 'semultitask':
+        CE = nn.CrossEntropyLoss()
+        KL = nn.KLDivLoss()
+        loss_eval = CE(matching.float(), label.long())
+        for qa in q_attn_list:
+            loss_eval = loss_eval + 0.1 * KL(qa[:,:args.num_concepts,:,:].float(), concept_qa.permute(0,3,1,2).float())
+        for aq in a_attn_list:
+            loss_eval = loss_eval + 0.1 * KL(aq[:,:args.num_concepts,:,:].float(), concept_aq.permute(0,3,1,2).float())
+    else:
+        criterion = nn.CrossEntropyLoss()
+        loss_eval = criterion(matching.float(), label.long())
 
     matching = matching.data
     label = label.data
@@ -366,6 +384,15 @@ if __name__ == "__main__":
     elif args.model_name == 'SEMH':
         import models.SEmultiHead as net
         model = net.SEMH(hidden_size = args.hidden_size, drop_rate = args.droprate,
+                         num_layers = args.num_layers,
+                         num_layers_cross = args.num_layers_cross,
+                         heads = args.heads, embd_dim=args.fp_embd_dim,
+                         word_embd_dim=args.fp_word_embd_dim,
+                         num_concepts=args.num_concepts)
+
+    elif args.model_name.lower() == 'semultitask':
+        import models.SEmultiTask as net
+        model = net.SEMultitask(hidden_size = args.hidden_size, drop_rate = args.droprate,
                          num_layers = args.num_layers,
                          num_layers_cross = args.num_layers_cross,
                          heads = args.heads, embd_dim=args.fp_embd_dim,

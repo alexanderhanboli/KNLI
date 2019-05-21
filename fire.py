@@ -86,10 +86,10 @@ if __name__ == "__main__":
         random_id = str(randrange(10)) + str(int(time.time()))[-6:] # just returns 6 numbers
 
         opt['opt'] = choice(['bert'])
-        opt['lr'] = choice([6.25e-5, 1.00e-4, 2.00e-4])
+        opt['lr'] = choice([6.25e-5, 1.00e-4])
         opt['lr_warmup'] = choice([0.01, 0.05, 0.10])
         opt['l2']  = choice([0.01])
-        opt['hidden_size']  = choice([512, 1024])
+        opt['hidden_size']  = choice([512])
         opt['heads'] = choice([5, 6]) # divisible for 300
         opt['droprate'] =  choice([0.10])
         opt['num_layers'] = choice([1,2,3])
