@@ -8,7 +8,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 # params
-parser.add_argument('--model_name', default='SEMH')
+parser.add_argument('--model_name', default='semultitask')
 parser.add_argument('--description', default='==NEW==', type=str)
 parser.add_argument('--gpu', type=str, default='0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15', help='used gpu')
 # parser.add_argument('--gpu', type=str, default='0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15', help='used gpu')
@@ -92,21 +92,22 @@ if __name__ == "__main__":
         opt['hidden_size']  = choice([512])
         opt['heads'] = choice([5, 6]) # divisible for 300
         opt['droprate'] =  choice([0.10])
+        opt['multitask_scale'] = choice([0.10, 0.25, 0.40])
         opt['num_layers'] = choice([1,2,3])
-        opt['num_layers_cross'] = choice([1,2,3,4])
+        opt['num_layers_cross'] = choice([1,2,3])
         opt['sharpening'] = choice([False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1
         opt['print_every'] = 2000
         opt['loader_num_workers'] = 4
-        opt['batch_size'] = choice([16,32])
+        opt['batch_size'] = choice([32])
         opt['checkpoint_every'] = 20
         opt['seed_random'] = 822 #np.random.randint(100, 10000)
         # opt['lr_decay'] = choice([10**uniform(-1.2,-.01), 1])
         opt['log_id'] = random_id
         #opt['fp_embd_dim'] = 100
         #opt['fp_embd_type'] = 'context'
-        opt['beta1'] = choice([0.5, 0.9])
+        opt['beta1'] = choice([0.5])
         opt['beta2'] = choice([0.999])
 
         drop = str(opt['droprate']-int(opt['droprate']))[1:][1]

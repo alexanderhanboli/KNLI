@@ -64,15 +64,30 @@ def evaluate(data, params, use_mask = True, print_out = False):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, _, _ = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=params.sharpening,
+        matching, q_attn_list, a_attn_list = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=params.sharpening,
                                 concept_attention=params.concept_attention, alpha=params.alpha) # [B, 3]
     else:
-        matching, _, _ = model(q1, a1, concept_qa, concept_aq, sharpening=params.sharpening,
+        matching, q_attn_list, a_attn_list = model(q1, a1, concept_qa, concept_aq, sharpening=params.sharpening,
                                 concept_attention=params.concept_attention, alpha=params.alpha) # [B, 3]
 
     # calculate word importance
-    criterion = nn.CrossEntropyLoss()
-    loss_eval = criterion(matching.float(), label.long())
+    if args.model_name.lower() == 'semultitask':
+        CE = nn.CrossEntropyLoss()
+        LL = nn.BCELoss()
+
+        concept_qa = concept_qa.permute(0,3,1,2) # [B, H, T1, T2]
+        concept_aq = concept_aq.permute(0,3,1,2)
+
+        loss_eval = CE(matching.float(), label.long())
+        for qa in q_attn_list:
+            loss_eval = loss_eval + (params.multitask_scale/params.num_layers_cross) * LL(qa[:,:params.num_concepts,:,:].float(), concept_qa.float())
+        for aq in a_attn_list:
+            loss_eval = loss_eval + (params.multitask_scale/params.num_layers_cross) * LL(aq[:,:params.num_concepts,:,:].float(), concept_aq.float())
+    else:
+        criterion = nn.CrossEntropyLoss()
+        loss_eval = criterion(matching.float(), label.long())
+
+    # pdb.set_trace()
 
     matching = matching.data
     label = label.data
@@ -166,6 +181,15 @@ if __name__ == "__main__":
                          word_embd_dim=params.fp_word_embd_dim,
                          num_concepts=params.num_concepts)
 
+    elif args.model_name.lower() == 'semultitask':
+        import models.SEmultiTask as net
+        model = net.SEMultitask(hidden_size = params.hidden_size, drop_rate = params.droprate,
+                         num_layers = params.num_layers,
+                         num_layers_cross = params.num_layers_cross,
+                         heads = params.heads, embd_dim=params.fp_embd_dim,
+                         word_embd_dim=params.fp_word_embd_dim,
+                         num_concepts=params.num_concepts)
+
     print("loading the model %s...." % args.best_model)
     model.load_state_dict(state)
 
@@ -245,6 +269,7 @@ if __name__ == "__main__":
     # results['recall'] = test_recall
     results['loss'] = test_loss
 
+    print('the test loss is {}\n'.format(test_loss))
     print('the final accuracy is {}\n'.format(test_accuracy))
     print('the average F1 is {}\n'.format(test_f1))
     print('the average precision is {}\n'.format(test_precision))

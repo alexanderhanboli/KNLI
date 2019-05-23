@@ -90,13 +90,13 @@ def attention(query, key, value, mask=None, dropout=None):
         scores = scores.masked_fill(mask == 0, -1e9)
 
     p_attn = nn.Softmax(dim=-1)(scores) # [B, H, T1, T2]
-    log_p_attn = nn.LogSoftmax(dim=-1)(scores)
+    sigmoid_p_attn = nn.Sigmoid()(scores) # [B, H, T1, T2]
 
     # apply dropout
     if dropout is not None:
         p_attn = dropout(p_attn)
 
-    return torch.matmul(p_attn, value), log_p_attn
+    return torch.matmul(p_attn, value), sigmoid_p_attn
 
 """LayerNorm
 """

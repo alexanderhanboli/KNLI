@@ -28,7 +28,7 @@ import pdb
 
 parser = argparse.ArgumentParser()
 # Input data
-parser.add_argument('--model_name', default='SEMH')
+parser.add_argument('--model_name', default='semultitask')
 parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
 parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
 parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
@@ -60,6 +60,7 @@ parser.add_argument('--hidden_size', type=int, default=512)
 parser.add_argument('--num_layers', type=int, default=1)
 parser.add_argument('--num_layers_cross', type=int, default=1)
 parser.add_argument('--heads', type=int, default=5)
+parser.add_argument('--multitask_scale', type=float, default=0.5)
 
 #others
 parser.add_argument('--loader_num_workers', type=int, default=5)
@@ -144,12 +145,16 @@ def train(data, use_mask = True):
     # calculate loss
     if args.model_name.lower() == 'semultitask':
         CE = nn.CrossEntropyLoss()
-        KL = nn.KLDivLoss()
+        LL = nn.BCELoss()
+
+        concept_qa = concept_qa.permute(0,3,1,2) # [B, H, T1, T2]
+        concept_aq = concept_aq.permute(0,3,1,2)
+
         loss = CE(matching.float(), label.long())
         for qa in q_attn_list:
-            loss = loss + 0.1 * KL(qa[:,:args.num_concepts,:,:].float(), concept_qa.permute(0,3,1,2).float())
+            loss = loss + (args.multitask_scale/args.num_layers_cross) * LL(qa[:,:args.num_concepts,:,:].float(), concept_qa.float())
         for aq in a_attn_list:
-            loss = loss + 0.1 * KL(aq[:,:args.num_concepts,:,:].float(), concept_aq.permute(0,3,1,2).float())
+            loss = loss + (args.multitask_scale/args.num_layers_cross) * LL(aq[:,:args.num_concepts,:,:].float(), concept_aq.float())
     else:
         criterion = nn.CrossEntropyLoss()
         loss = criterion(matching.float(), label.long())
@@ -190,12 +195,16 @@ def evaluate(data, use_mask = True, print_out = False):
     # calculate word importance
     if args.model_name.lower() == 'semultitask':
         CE = nn.CrossEntropyLoss()
-        KL = nn.KLDivLoss()
+        LL = nn.BCELoss()
+
+        concept_qa = concept_qa.permute(0,3,1,2) # [B, H, T1, T2]
+        concept_aq = concept_aq.permute(0,3,1,2)
+
         loss_eval = CE(matching.float(), label.long())
         for qa in q_attn_list:
-            loss_eval = loss_eval + 0.1 * KL(qa[:,:args.num_concepts,:,:].float(), concept_qa.permute(0,3,1,2).float())
+            loss_eval = loss_eval + (args.multitask_scale/args.num_layers_cross) * LL(qa[:,:args.num_concepts,:,:].float(), concept_qa.float())
         for aq in a_attn_list:
-            loss_eval = loss_eval + 0.1 * KL(aq[:,:args.num_concepts,:,:].float(), concept_aq.permute(0,3,1,2).float())
+            loss_eval = loss_eval + (args.multitask_scale/args.num_layers_cross) * LL(aq[:,:args.num_concepts,:,:].float(), concept_aq.float())
     else:
         criterion = nn.CrossEntropyLoss()
         loss_eval = criterion(matching.float(), label.long())
