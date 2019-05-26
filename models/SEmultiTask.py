@@ -87,7 +87,7 @@ def attention(query, key, value, mask=None, dropout=None):
     scores = torch.matmul(query, key.transpose(-2, -1)) \
              / math.sqrt(d_k) # [B, H, T1, T2]
     if mask is not None:
-        scores = scores.masked_fill(mask == 0, -1e9)
+        scores = scores.masked_fill(mask == 0, -1e8)
 
     p_attn = nn.Softmax(dim=-1)(scores) # [B, H, T1, T2]
     sigmoid_p_attn = nn.Sigmoid()(scores) # [B, H, T1, T2]

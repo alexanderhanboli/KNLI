@@ -78,11 +78,11 @@ def evaluate(data, params, use_mask = True, print_out = False):
         concept_qa = concept_qa.permute(0,3,1,2) # [B, H, T1, T2]
         concept_aq = concept_aq.permute(0,3,1,2)
 
-        loss_eval = CE(matching.float(), label.long())
+        loss_eval = (1. / (1. + params.multitask_scale)) * CE(matching.float(), label.long())
         for qa in q_attn_list:
-            loss_eval = loss_eval + (params.multitask_scale/params.num_layers_cross) * LL(qa[:,:params.num_concepts,:,:].float(), concept_qa.float())
+            loss_eval = loss_eval + (params.multitask_scale / (1. + params.multitask_scale)) * LL(qa[:,:params.num_concepts,:,:].float(), concept_qa.float())
         for aq in a_attn_list:
-            loss_eval = loss_eval + (params.multitask_scale/params.num_layers_cross) * LL(aq[:,:params.num_concepts,:,:].float(), concept_aq.float())
+            loss_eval = loss_eval + (params.multitask_scale / (1. + params.multitask_scale)) * LL(aq[:,:params.num_concepts,:,:].float(), concept_aq.float())
     else:
         criterion = nn.CrossEntropyLoss()
         loss_eval = criterion(matching.float(), label.long())

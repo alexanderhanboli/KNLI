@@ -92,7 +92,7 @@ if __name__ == "__main__":
         opt['hidden_size']  = choice([512])
         opt['heads'] = choice([5, 6]) # divisible for 300
         opt['droprate'] =  choice([0.10])
-        opt['multitask_scale'] = choice([0.10, 0.25, 0.40])
+        opt['multitask_scale'] = choice([1.0, 2.0, 3.0])
         opt['num_layers'] = choice([1,2,3])
         opt['num_layers_cross'] = choice([1,2,3])
         opt['sharpening'] = choice([False])
