@@ -108,7 +108,7 @@ def read_hyper_hypo(file, id_word):
 
     w_w_features_same_parent = OrderedDict()
     for k, v in id2_id1.items():
-        for vv1 in v: 
+        for vv1 in v:
             for vv2 in v:
                 if vv1 != vv2:
                     if vv1 in id_word and vv2 in id_word:
@@ -188,8 +188,8 @@ def features2pkl(feat_path, dict_path, out_path):
                     if int(ids0) in bk_for_x:
                         bk_for_x[int(ids0)][int(ids1)] = list(map(float, l[1:]))
                     else:
-                        bk_for_x[int(ids0)] = {int(ids1) : list(map(float, l[1:]))} 
- 
+                        bk_for_x[int(ids0)] = {int(ids1) : list(map(float, l[1:]))}
+
     with open(out_path, 'wb') as f:
         pkl.dump(bk_for_x, f)
 
@@ -211,7 +211,7 @@ def features2pkl_binary(feat_path, out_path):
             if ids[0] in bk_for_x:
                 bk_for_x[ids[0]][ids[1]] = list(map(lambda x: np.ceil(float(x)), l[1:]))
             else:
-                bk_for_x[ids[0]] = {ids[1] : list(map(lambda x: np.ceil(float(x)), l[1:]))} 
+                bk_for_x[ids[0]] = {ids[1] : list(map(lambda x: np.ceil(float(x)), l[1:]))}
 
     with open(out_path, 'wb') as f:
         pkl.dump(bk_for_x, f)
@@ -234,8 +234,8 @@ def features2pkl_continuous(feat_path, out_path):
             if ids[0] in bk_for_x:
                 bk_for_x[ids[0]][ids[1]] = list(map(float, l[1:]))
             else:
-                bk_for_x[ids[0]] = {ids[1] : list(map(float, l[1:]))} 
- 
+                bk_for_x[ids[0]] = {ids[1] : list(map(float, l[1:]))}
+
     with open(out_path, 'wb') as f:
         pkl.dump(bk_for_x, f)
 
@@ -276,7 +276,7 @@ def build_dictionary(filepaths, dst_path, lowercase=False, wordnet=None, remove_
     sorted_words = [words[ii] for ii in sorted_idx[::-1]]
 
     worddict = OrderedDict()
-    worddict['_PAD_'] = 0 # default, padding 
+    worddict['_PAD_'] = 0 # default, padding
     worddict['_UNK_'] = 1 # out-of-vocabulary
 
     for ii, ww in enumerate(sorted_words):
@@ -345,7 +345,7 @@ def build_for_json(split):
 
             output.append(tmp)
             count += 1
-            
+
     print('max min len premise for', split, max(len_p), min(len_p))
     print('max min len hypothesis for', split, max(len_h), min(len_h))
 
@@ -366,7 +366,7 @@ def build_for_json(split):
     #     tmp['hypothesis_tokens'] = hypothesis_tokens
     #     tmp['premise_lemmas'] = premise_lemmas
     #     tmp['hypothesis_lemmas'] = hypothesis_lemmas
-        
+
     #     if t['gold_label'] == 'neutral':
     #         count_N += 1
     #         l_N['premise'].append(len(premise_tokens))
@@ -436,9 +436,9 @@ if __name__ == '__main__':
     print('synonymy:', len(synonymy))
 
     features_list = [
-                     hypernymy, 
-                     hyponymy, 
-                     co_hyponyms, 
+                     hypernymy,
+                     hyponymy,
+                     co_hyponyms,
                      antonymy,
                      synonymy
                      ]
@@ -481,20 +481,20 @@ if __name__ == '__main__':
     dev_data, dev_count = build_for_json('dev')
     test_data, test_count = build_for_json('test')
 
-    data = {'train': list(train_data), 'dev': list(dev_data), 'test': list(test_data), 
+    data = {'train': list(train_data), 'dev': list(dev_data), 'test': list(test_data),
             'split_size': {'train':train_count, 'dev':dev_count, 'test':test_count}}
 
     print("\nSaving the data...\n")
     with open(os.path.join('./sequence_and_features', 'snli_data.json'), 'w+') as outfile:
         json.dump(data, outfile)
 
-    print('6. build dictionary for word sequence and lemma sequence from training set\n')
-    build_dictionary([os.path.join(dst_dir, 'premise_snli_1.0_train_token.txt'), 
-                      os.path.join(dst_dir, 'hypothesis_snli_1.0_train_token.txt')], 
-                      os.path.join(dst_dir, 'vocab_cased.pkl'), wordnet=word_id_num, remove_phrase=True)
-    build_dictionary([os.path.join(dst_dir, 'premise_snli_1.0_train_lemma.txt'), 
-                      os.path.join(dst_dir, 'hypothesis_snli_1.0_train_lemma.txt')], 
-                      os.path.join(dst_dir, 'vocab_cased_lemma.pkl'), wordnet=word_id_num, remove_phrase=True)
+    # print('6. build dictionary for word sequence and lemma sequence from training set\n')
+    # build_dictionary([os.path.join(dst_dir, 'premise_snli_1.0_train_token.txt'),
+    #                   os.path.join(dst_dir, 'hypothesis_snli_1.0_train_token.txt')],
+    #                   os.path.join(dst_dir, 'vocab_cased.pkl'), wordnet=word_id_num, remove_phrase=True)
+    # build_dictionary([os.path.join(dst_dir, 'premise_snli_1.0_train_lemma.txt'),
+    #                   os.path.join(dst_dir, 'hypothesis_snli_1.0_train_lemma.txt')],
+    #                   os.path.join(dst_dir, 'vocab_cased_lemma.pkl'), wordnet=word_id_num, remove_phrase=True)
 
     print('7. convert to pkl format based on lemma dictionary\n')
     # dict_path = os.path.join(dst_dir, 'vocab_cased_lemma.pkl')

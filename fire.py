@@ -8,7 +8,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 # params
-parser.add_argument('--model_name', default='semultitask')
+parser.add_argument('--model_name', default='SEMH')
 parser.add_argument('--description', default='==NEW==', type=str)
 parser.add_argument('--gpu', type=str, default='0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15', help='used gpu')
 # parser.add_argument('--gpu', type=str, default='0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15', help='used gpu')
@@ -90,11 +90,11 @@ if __name__ == "__main__":
         opt['lr_warmup'] = choice([0.01, 0.05, 0.10])
         opt['l2']  = choice([0.01])
         opt['hidden_size']  = choice([512])
-        opt['heads'] = choice([5, 6]) # divisible for 300
+        opt['heads'] = choice([5]) # divisible for 300
         opt['droprate'] =  choice([0.10])
-        opt['multitask_scale'] = choice([1.0, 2.0, 3.0])
-        opt['num_layers'] = choice([1,2,3])
-        opt['num_layers_cross'] = choice([1,2,3])
+        opt['multitask_scale'] = choice([6.0, 7.0, 8.0, 9.0, 10.0])
+        opt['num_layers'] = choice([1])
+        opt['num_layers_cross'] = choice([2])
         opt['sharpening'] = choice([False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1

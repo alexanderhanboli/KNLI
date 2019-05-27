@@ -238,23 +238,28 @@ class MHSEAttn(nn.Module):
 
         batch_size = value.size(0)
 
-        # Mappings for multihead
+        # Structured embeddings
         query = self.fwQ(query) # [B, T, D]
         key   = self.fwK(key)
+        value = self.fwV(value)
+
+        # Reshape
         query = query.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, T, H, dk]
         key   = key.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2)
-        value = self.fwV(value)
         value = value.view(batch_size, -1, self.heads, self.d_k).transpose(1, 2) # [B, H, T2, d_k]
 
-        # Calculate scores
+        # Calculate initial scores
         scores = torch.matmul(query, key.transpose(-2, -1)) \
             / math.sqrt(self.d_k) # [B, H, T1, T2]
+
+        # Modify scores using external knowledge
         scores = scores + lambd * qa_concept.permute(0, 3, 1, 2) # [B, H, T1, T2]
 
         # Add mask
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e9)
 
+        # Calculate attention by applying softmax
         self.attn = self.dropout(F.softmax(scores, dim = -1)) # [B, H, T1, T2]
 
         x = torch.matmul(self.attn, value) # [B, H, T1, d_k]
@@ -361,7 +366,7 @@ class CrEncoder(nn.Module):
         "Pass the input (and mask) through each layer in turn."
         n_layers = len(self.layers)
         for i, layer in enumerate(self.layers):
-            if i >= -1:
+            if i <= -1:
                 # do concept attention for the chosen layers
                 x = layer(x, m, qa_concept, qmask, amask, lambd)
             else:
@@ -461,8 +466,8 @@ class SEMH(nn.Module):
         self.encoder_aq = c(self.encoder_qa)
 
         # projection layer
-        self.proj = nn.Linear(6 * embd_dim, hidden_size)
-        self.classifier = Classifier(hidden_size=hidden_size, dropout=drop_rate)
+        self.proj = nn.Linear(4 * embd_dim, 4 * embd_dim)
+        self.classifier = Classifier(hidden_size=4 * embd_dim, dropout=drop_rate)
 
         # initialize weights
         self.apply(self.initialize_weights)
@@ -524,20 +529,20 @@ class SEMH(nn.Module):
         answer = self.encoder_a(answer, amask)
 
         # self-attention again
-        question = self.encoder_qa(question, answer, qa_concept, qmask, amask, 50.0)
-        answer = self.encoder_aq(answer, question, aq_concept, amask, qmask, 50.0)
+        question = self.encoder_qa(question, answer, qa_concept, qmask, amask, 100.0)
+        answer = self.encoder_aq(answer, question, aq_concept, amask, qmask, 100.0)
 
         # pooling
         q_ave = torch.mean( question, dim=1, keepdim=False ) # [B, D]
         q_max = torch.max( question, dim=1 )[0].squeeze(1) # [B, D]
         a_ave = torch.mean( answer, dim=1, keepdim=False ) # [B, D]
         a_max = torch.max( answer, dim=1 )[0].squeeze(1) # [B, D]
-        q_concept_weight = F.softmax( torch.sum( torch.sum( qa_concept, dim=-1, keepdim=False ), dim=-1, keepdim=True ).masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1 ) # [B, T1, 1]
-        a_concept_weight = F.softmax( torch.sum( torch.sum( aq_concept, dim=-1, keepdim=False ), dim=-1, keepdim=True ).masked_fill(amask.unsqueeze(2) == 0, -1e9), dim=1 ) # [B, T2, 1]
-        q_concept_ave = torch.sum( question * q_concept_weight, dim=1, keepdim=False ) # [B, D]
-        a_concept_ave = torch.sum( answer   * a_concept_weight, dim=1, keepdim=False ) # [B, D]
+        # q_concept_weight = F.softmax( torch.sum( torch.sum( qa_concept, dim=-1, keepdim=False ), dim=-1, keepdim=True ).masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1 ) # [B, T1, 1]
+        # a_concept_weight = F.softmax( torch.sum( torch.sum( aq_concept, dim=-1, keepdim=False ), dim=-1, keepdim=True ).masked_fill(amask.unsqueeze(2) == 0, -1e9), dim=1 ) # [B, T2, 1]
+        # q_concept_ave = torch.sum( question * q_concept_weight, dim=1, keepdim=False ) # [B, D]
+        # a_concept_ave = torch.sum( answer   * a_concept_weight, dim=1, keepdim=False ) # [B, D]
 
-        final = torch.cat( (q_ave, q_max, a_ave, a_max, q_concept_ave, a_concept_ave), -1 ) # [B, 6*D]
+        final = torch.cat( (q_ave, q_max, a_ave, a_max), -1 ) # [B, 4*D]
         final = self.proj(final) # [B, hidden_size]
 
         score = self.classifier(final) # [B, 3]
