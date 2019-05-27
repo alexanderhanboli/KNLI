@@ -18,6 +18,8 @@ parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
 parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
 parser.add_argument('--n_epochs', default=5, type=int)
 parser.add_argument('--concept_attention', default='full', type=str, choices=['full', 'easy'])
+parser.add_argument('--concept_layers', type=str, default='-1')
+
 # test data
 # parser.add_argument('--ftest', default='hho_RT_new_splits.json')
 
@@ -75,6 +77,7 @@ if __name__ == "__main__":
     opt['model_name'] = args.model_name
     opt['description'] = args.description
     opt['concept_attention'] = args.concept_attention
+    opt['concept_layers'] = args.concept_layers
 
     create_log_dir(os.path.join(root_folder_data,'logs'))
 
@@ -92,7 +95,7 @@ if __name__ == "__main__":
         opt['hidden_size']  = choice([512])
         opt['heads'] = choice([5]) # divisible for 300
         opt['droprate'] =  choice([0.10])
-        opt['multitask_scale'] = choice([6.0, 7.0, 8.0, 9.0, 10.0])
+        # opt['multitask_scale'] = choice([6.0, 7.0, 8.0, 9.0, 10.0])
         opt['num_layers'] = choice([1])
         opt['num_layers_cross'] = choice([2])
         opt['sharpening'] = choice([False])

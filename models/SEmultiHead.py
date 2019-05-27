@@ -356,17 +356,18 @@ class EncoderLayer(nn.Module):
 
 class CrEncoder(nn.Module):
     "Core encoder is a stack of N layers"
-    def __init__(self, layer, N=4):
+    def __init__(self, layer, N=4, concept_layers=[-1]):
 
         super(CrEncoder, self).__init__()
         self.layers = clones(layer, N)
         self.norm = LayerNorm(layer.size, eps=1e-12)
+        self.concept_layers = concept_layers
 
     def forward(self, x, m, qa_concept, qmask=None, amask=None, lambd=5.0):
         "Pass the input (and mask) through each layer in turn."
         n_layers = len(self.layers)
         for i, layer in enumerate(self.layers):
-            if i <= -1:
+            if i in self.concept_layers:
                 # do concept attention for the chosen layers
                 x = layer(x, m, qa_concept, qmask, amask, lambd)
             else:
@@ -433,7 +434,8 @@ class SEMH(nn.Module):
 
     def __init__(self, hidden_size = 512, drop_rate = 0.1,
                  num_layers = 4, num_layers_cross = 2, heads = 4,
-                 embd_dim = 300, word_embd_dim = 300, num_concepts = 5):
+                 embd_dim = 300, word_embd_dim = 300, num_concepts = 5,
+                 concept_layers = [-1]):
         super(SEMH, self).__init__()
         c = copy.deepcopy
 
@@ -462,7 +464,8 @@ class SEMH(nn.Module):
         self.encoder_a = c(self.encoder_q)
 
         self.encoder_qa = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(seattn),
-                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
+                                                feed_forward=c(ff), dropout=drop_rate),
+                                    N=num_layers_cross, concept_layers=concept_layers)
         self.encoder_aq = c(self.encoder_qa)
 
         # projection layer

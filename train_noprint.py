@@ -61,6 +61,7 @@ parser.add_argument('--num_layers', type=int, default=1)
 parser.add_argument('--num_layers_cross', type=int, default=1)
 parser.add_argument('--heads', type=int, default=5)
 parser.add_argument('--multitask_scale', type=float, default=0.5)
+parser.add_argument('--concept_layers', type=str, default='-1')
 
 #others
 parser.add_argument('--loader_num_workers', type=int, default=5)
@@ -315,6 +316,10 @@ if __name__ == "__main__":
     # Build model and optimizer
     ############################
     print("Initializing model...\n")
+
+    concept_layers = [int(i) for i in args.concept_layers.split(',')]
+    print("Adding external knowledge to layers {} ...\n".format(concept_layers))
+
     if args.model_name == 'Qkeywords':
         import models.Qkeywords as net
         model = net.Qkeywords(hidden_size = args.hidden_size, drop_rate = args.droprate,
@@ -397,7 +402,8 @@ if __name__ == "__main__":
                          num_layers_cross = args.num_layers_cross,
                          heads = args.heads, embd_dim=args.fp_embd_dim,
                          word_embd_dim=args.fp_word_embd_dim,
-                         num_concepts=args.num_concepts)
+                         num_concepts=args.num_concepts,
+                         concept_layers=concept_layers)
 
     elif args.model_name.lower() == 'semultitask':
         import models.SEmultiTask as net

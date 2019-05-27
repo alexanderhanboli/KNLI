@@ -146,6 +146,9 @@ if __name__ == "__main__":
 
     word_embd_dim =  params.fp_word_embd_dim
 
+    concept_layers = [int(i) for i in params.concept_layers.split(',')]
+    print("Adding external knowledge to layers {} ...\n".format(concept_layers))
+
     if args.model_name == 'QAcombine' or args.model_name == 'QAconcept':
         import models.QAcombine as net
         model = net.QAconcept(hidden_size = params.hidden_size, drop_rate = params.droprate,
@@ -179,7 +182,8 @@ if __name__ == "__main__":
                          num_layers_cross = params.num_layers_cross,
                          heads = params.heads, embd_dim=params.fp_embd_dim,
                          word_embd_dim=params.fp_word_embd_dim,
-                         num_concepts=params.num_concepts)
+                         num_concepts=params.num_concepts,
+                         concept_layers=concept_layers)
 
     elif args.model_name.lower() == 'semultitask':
         import models.SEmultiTask as net
