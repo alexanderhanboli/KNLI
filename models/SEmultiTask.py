@@ -90,13 +90,12 @@ def attention(query, key, value, mask=None, dropout=None):
         scores = scores.masked_fill(mask == 0, -1e8)
 
     p_attn = nn.Softmax(dim=-1)(scores) # [B, H, T1, T2]
-    sigmoid_p_attn = nn.Sigmoid()(scores) # [B, H, T1, T2]
 
     # apply dropout
     if dropout is not None:
         p_attn = dropout(p_attn)
 
-    return torch.matmul(p_attn, value), sigmoid_p_attn
+    return torch.matmul(p_attn, value), scores
 
 """LayerNorm
 """
@@ -290,18 +289,20 @@ class EncoderLayer(nn.Module):
 
 class CrEncoder(nn.Module):
     "Core encoder is a stack of N layers"
-    def __init__(self, layer, N=4):
+    def __init__(self, layer, N=4, concept_layers=[-1]):
 
         super(CrEncoder, self).__init__()
         self.layers = clones(layer, N)
         self.norm = LayerNorm(layer.size, eps=1e-12)
+        self.concept_layers = concept_layers
 
     def forward(self, x, m, qmask=None, amask=None):
         "Pass the input (and mask) through each layer in turn."
         attn_list = []
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             x, attn = layer(x, m, qmask, amask)
-            attn_list.append(attn)
+            if i in self.concept_layers:
+                attn_list.append(attn)
 
         return self.norm(x), attn_list
 
@@ -364,7 +365,7 @@ class SEMultitask(nn.Module):
 
     def __init__(self, hidden_size = 512, drop_rate = 0.1,
                  num_layers = 4, num_layers_cross = 2, heads = 4,
-                 embd_dim = 300, word_embd_dim = 300, num_concepts = 5):
+                 embd_dim = 300, word_embd_dim = 300, num_concepts = 5, concept_layers=[-1]):
         super(SEMultitask, self).__init__()
         c = copy.deepcopy
 
@@ -392,12 +393,13 @@ class SEMultitask(nn.Module):
         self.encoder_a = c(self.encoder_q)
 
         self.encoder_qa = CrEncoder(layer = CrEncoderLayer(size=embd_dim, self_attn=c(attn), cross_attn=c(attn),
-                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers_cross)
+                                                feed_forward=c(ff), dropout=drop_rate),
+                                    N=num_layers_cross, concept_layers=concept_layers)
         self.encoder_aq = c(self.encoder_qa)
 
         # projection layer
-        self.proj = nn.Linear(6 * embd_dim, hidden_size)
-        self.classifier = Classifier(hidden_size=hidden_size, dropout=drop_rate)
+        self.proj = nn.Linear(4 * embd_dim, 4 * embd_dim)
+        self.classifier = Classifier(hidden_size=4 * embd_dim, dropout=drop_rate)
 
         # initialize weights
         self.apply(self.initialize_weights)
@@ -468,12 +470,12 @@ class SEMultitask(nn.Module):
         q_max = torch.max( question, dim=1 )[0].squeeze(1) # [B, D]
         a_ave = torch.mean( answer, dim=1, keepdim=False ) # [B, D]
         a_max = torch.max( answer, dim=1 )[0].squeeze(1) # [B, D]
-        q_concept_weight = F.softmax( torch.sum( torch.sum( qa_concept, dim=-1, keepdim=False ), dim=-1, keepdim=True ).masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1 ) # [B, T1, 1]
-        a_concept_weight = F.softmax( torch.sum( torch.sum( aq_concept, dim=-1, keepdim=False ), dim=-1, keepdim=True ).masked_fill(amask.unsqueeze(2) == 0, -1e9), dim=1 ) # [B, T2, 1]
-        q_concept_ave = torch.sum( question * q_concept_weight, dim=1, keepdim=False ) # [B, D]
-        a_concept_ave = torch.sum( answer   * a_concept_weight, dim=1, keepdim=False ) # [B, D]
+        # q_concept_weight = F.softmax( torch.sum( torch.sum( qa_concept, dim=-1, keepdim=False ), dim=-1, keepdim=True ).masked_fill(qmask.unsqueeze(2) == 0, -1e9), dim=1 ) # [B, T1, 1]
+        # a_concept_weight = F.softmax( torch.sum( torch.sum( aq_concept, dim=-1, keepdim=False ), dim=-1, keepdim=True ).masked_fill(amask.unsqueeze(2) == 0, -1e9), dim=1 ) # [B, T2, 1]
+        # q_concept_ave = torch.sum( question * q_concept_weight, dim=1, keepdim=False ) # [B, D]
+        # a_concept_ave = torch.sum( answer   * a_concept_weight, dim=1, keepdim=False ) # [B, D]
 
-        final = torch.cat( (q_ave, q_max, a_ave, a_max, q_concept_ave, a_concept_ave), -1 ) # [B, 6*D]
+        final = torch.cat( (q_ave, q_max, a_ave, a_max), -1 ) # [B, 4*D]
         final = self.proj(final) # [B, hidden_size]
 
         score = self.classifier(final) # [B, 3]
