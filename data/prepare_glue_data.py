@@ -8,6 +8,8 @@ from spacy.tokenizer import Tokenizer
 from spacy.lang.en import English
 tokenizer = English()
 
+import pdb
+
 from tqdm import tqdm
 
 CLASS_DICT = {'entailment':0, 'neutral':1, 'contradiction':2}
@@ -149,11 +151,16 @@ class MnliProcessor(DataProcessor):
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "train.tsv")), "train")
 
-    def get_dev_examples(self, data_dir):
+    def get_dev_examples(self, data_dir, match=True):
         """See base class."""
-        return self._create_examples(
-            self._read_tsv(os.path.join(data_dir, "dev_matched.tsv")),
-            "dev_matched")
+        if match:
+            return self._create_examples(
+                self._read_tsv(os.path.join(data_dir, "dev_matched.tsv")),
+                "dev_matched")
+        else:
+            return self._create_examples(
+                self._read_tsv(os.path.join(data_dir, "dev_mismatched.tsv")),
+                "dev_mismatched")
 
     def get_test_examples(self, data_dir):
         """See base class."""
@@ -198,16 +205,22 @@ if __name__ == "__main__":
     mnli_dir = './MNLI/'
 
     train_data = snli.get_train_examples(snli_dir) + mnli.get_train_examples(mnli_dir)
-    dev_data = mnli.get_dev_examples(mnli_dir)
-    test_data = mnli.get_test_examples(mnli_dir)
+    dev_data_match = mnli.get_dev_examples(mnli_dir, True)
+    dev_data_mismatch = mnli.get_dev_examples(mnli_dir, False)
+    test_snli = snli.get_test_examples(snli_dir)
+    # test_mnli = mnli.get_test_examples(mnli_dir)
     adv_data = prepare_dataset('./snli/snli_1.0/data/dataset.jsonl', tokenizer)[6]
     data = {'train': train_data,
-            'dev': dev_data,
-            'test': test_data,
+            'dev': dev_data_match,
+            'test_snli': test_snli,
+            'test_mnli_match': dev_data_match,
+            'test_mnli_mismatch': dev_data_mismatch,
             'test_adv': adv_data,
             'split_size':{'train':len(train_data),
-                          'dev':len(dev_data),
-                          'test':len(test_data),
+                          'dev':len(dev_data_match),
+                          'test_snli':len(test_snli),
+                          'test_mnli_match':len(dev_data_match),
+                          'test_mnli_mismatch':len(dev_data_mismatch),
                           'test_adv':len(adv_data)}
             }
 
