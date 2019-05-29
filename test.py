@@ -73,16 +73,22 @@ def evaluate(data, params, use_mask = True, print_out = False):
     # calculate word importance
     if args.model_name.lower() == 'semultitask':
         CE = nn.CrossEntropyLoss()
-        LL = nn.BCELoss()
 
         concept_qa = concept_qa.permute(0,3,1,2) # [B, H, T1, T2]
         concept_aq = concept_aq.permute(0,3,1,2)
 
-        loss_eval = (1. / (1. + params.multitask_scale)) * CE(matching.float(), label.long())
+        pos_weight_qa = Variable(5*128*torch.ones(concept_qa.shape[1:]))
+        pos_weight_aq = Variable(5*128*torch.ones(concept_aq.shape[1:]))
+
+        LL_qa = nn.BCEWithLogitsLoss(pos_weight=pos_weight_qa)
+        LL_aq = nn.BCEWithLogitsLoss(pos_weight=pos_weight_aq)
+
+        loss_eval = CE(matching.float(), label.long())
+
         for qa in q_attn_list:
-            loss_eval = loss_eval + (params.multitask_scale / (1. + params.multitask_scale)) * LL(qa[:,:params.num_concepts,:,:].float(), concept_qa.float())
+            loss_eval = loss_eval + params.multitask_scale * 10 * LL_qa(qa[:,:params.num_concepts,:,:].float(), concept_qa.float())
         for aq in a_attn_list:
-            loss_eval = loss_eval + (params.multitask_scale / (1. + params.multitask_scale)) * LL(aq[:,:params.num_concepts,:,:].float(), concept_aq.float())
+            loss_eval = loss_eval + params.multitask_scale * 10 * LL_aq(aq[:,:params.num_concepts,:,:].float(), concept_aq.float())
     else:
         criterion = nn.CrossEntropyLoss()
         loss_eval = criterion(matching.float(), label.long())
@@ -192,7 +198,8 @@ if __name__ == "__main__":
                          num_layers_cross = params.num_layers_cross,
                          heads = params.heads, embd_dim=params.fp_embd_dim,
                          word_embd_dim=params.fp_word_embd_dim,
-                         num_concepts=params.num_concepts)
+                         num_concepts=params.num_concepts,
+                         concept_layers=concept_layers)
 
     print("loading the model %s...." % args.best_model)
     model.load_state_dict(state)
