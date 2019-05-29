@@ -123,3 +123,91 @@ class BatchDataLoader(Dataset):
 
     def __len__(self):
         return self.N
+        
+        
+        
+        
+        
+
+class BertBatchDataLoader(Dataset):
+    '''
+     This data loader loads data.
+     This supports any batch size.
+    '''
+    def __init__(self, fpath='', embd_dict=None, concept_dict=None, split='', max_len = 128, emd_dim = 300, num_concepts = 5):
+
+        self.embd_dict = embd_dict
+        self.concept_dict = concept_dict
+        self.emd_dim = emd_dim
+        self.num_concepts = num_concepts
+        self.split = split
+
+        # load in utterances
+        everything = read_json_file(fpath)
+        self.N = everything['split_size'][self.split]
+        self.data = everything[split]
+        self.max_len = max_len
+
+        print("Done with loading data for %s split containing " % (self.split))
+        print("Total: %d samples" % (self.N ))
+        print('-' * 50)
+
+    def __getitem__(self, idx):
+
+        premise = self.data[idx]['premise']
+        hypothesis = self.data[idx]['hypothesis']
+        query = ['CLS'] + self.data[idx]['premise_tokens'] + ['EOS']
+        query_segment = [0] * len(query)
+        answer = self.data[idx]['hypothesis_tokens'] + ['EOS']
+        answer_segment = [1] * len(answer)
+        query_lemma = ['CLS'] + self.data[idx]['premise_lemmas'] + ['EOS']
+        answer_lemma = self.data[idx]['hypothesis_lemmas'] + ['EOS']
+        sentence = query + answer
+        sentence_lemma = query_lemma + answer_lemma
+        segment_ids = query_segment + answer_segment
+        label = int(self.data[idx]['label'])
+        concept_map = None
+        query_length = len(query)
+
+        # embedding vectors
+        vecQA = np.zeros((self.max_len, self.emd_dim), dtype = np.float32)
+
+        # concept vectors
+        if self.concept_dict is not None:
+            # map
+            concept_map = np.zeros((self.max_len, self.max_len, self.num_concepts), dtype = np.float32) # [T, T, d]
+
+            # process premise and hypothesis
+            for i, widx in enumerate(sentence):
+                if i >= self.max_len:
+                    break
+                try:
+                    vecQA[i,:] = self.embd_dict[widx] # get the word embedding for premise
+                except:
+                    pass
+
+                for j, widy in enumerate(sentence):
+                    if j <= i or j >= self.max_len or segment_ids[j] == segment_ids[i]:
+                        break
+                    
+                    if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
+                        concept_map[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
+                    if answer_lemma[j] in self.concept_dict and query_lemma[i] in self.concept_dict[answer_lemma[j]]:
+                        concept_map[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]]
+
+        # create masks
+        mask = build_mask(len(sentence), self.max_len)
+
+        data  = {'qa':vecQA,
+                 'concept_map':concept_map,
+                 'mask':mask,
+                 'label':label,
+                 'qlength':len(query),
+                 'alength':len(answer),
+                 'qstr':premise,
+                 'astr':hypothesis}
+
+        return data
+
+    def __len__(self):
+        return self.N

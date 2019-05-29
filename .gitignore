@@ -109,3 +109,6 @@ results/
 check_points/
 logs/
 outputs/
+annotation/
+checkpoints_backup/
+src/
