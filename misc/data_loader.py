@@ -123,11 +123,11 @@ class BatchDataLoader(Dataset):
 
     def __len__(self):
         return self.N
-        
-        
-        
-        
-        
+
+
+
+
+
 
 class BertBatchDataLoader(Dataset):
     '''
@@ -156,15 +156,23 @@ class BertBatchDataLoader(Dataset):
 
         premise = self.data[idx]['premise']
         hypothesis = self.data[idx]['hypothesis']
+
         query = ['CLS'] + self.data[idx]['premise_tokens'] + ['EOS']
         query_segment = [0] * len(query)
+
         answer = self.data[idx]['hypothesis_tokens'] + ['EOS']
         answer_segment = [1] * len(answer)
+
         query_lemma = ['CLS'] + self.data[idx]['premise_lemmas'] + ['EOS']
         answer_lemma = self.data[idx]['hypothesis_lemmas'] + ['EOS']
-        sentence = query + answer
-        sentence_lemma = query_lemma + answer_lemma
+
         segment_ids = query_segment + answer_segment
+        if len(segment_ids) < self.max_len:
+            segment_ids = segment_ids + [0] * (self.max_len - len(segment_ids))
+        else:
+            segment_ids = segment_ids[:self.max_len]
+        segment_ids = np.array(segment_ids)
+
         label = int(self.data[idx]['label'])
         concept_map = None
         query_length = len(query)
@@ -178,7 +186,7 @@ class BertBatchDataLoader(Dataset):
             concept_map = np.zeros((self.max_len, self.max_len, self.num_concepts), dtype = np.float32) # [T, T, d]
 
             # process premise and hypothesis
-            for i, widx in enumerate(sentence):
+            for i, widx in enumerate(query):
                 if i >= self.max_len:
                     break
                 try:
@@ -186,24 +194,26 @@ class BertBatchDataLoader(Dataset):
                 except:
                     pass
 
-                for j, widy in enumerate(sentence):
-                    if j <= i or j >= self.max_len or segment_ids[j] == segment_ids[i]:
+                for j, widy in enumerate(answer):
+                    if query_length + j >= self.max_len:
                         break
-                    
+
                     if query_lemma[i] in self.concept_dict and answer_lemma[j] in self.concept_dict[query_lemma[i]]:
-                        concept_map[i, j, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
+                        concept_map[i, j+query_length, :] = self.concept_dict[query_lemma[i]][answer_lemma[j]]
                     if answer_lemma[j] in self.concept_dict and query_lemma[i] in self.concept_dict[answer_lemma[j]]:
-                        concept_map[j, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]]
+                        concept_map[j+query_length, i, :] = self.concept_dict[answer_lemma[j]][query_lemma[i]]
 
         # create masks
-        mask = build_mask(len(sentence), self.max_len)
+        mask = build_mask(len(query)+len(answer), self.max_len)
 
         data  = {'qa':vecQA,
-                 'concept_map':concept_map,
+                 'segment_ids':segment_ids,
+                 'concept':concept_map,
                  'mask':mask,
                  'label':label,
                  'qlength':len(query),
                  'alength':len(answer),
+                 'length':len(query)+len(answer),
                  'qstr':premise,
                  'astr':hypothesis}
 
