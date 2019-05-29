@@ -28,9 +28,9 @@ import pdb
 
 parser = argparse.ArgumentParser()
 # Input data
-parser.add_argument('--model_name', default='semultitask')
-parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
-parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
+parser.add_argument('--model_name', default='SEMH')
+parser.add_argument('--fp_train', default='./data/mnli/mnli_data.json')
+parser.add_argument('--fp_val',   default='./data/mnli/mnli_data.json')
 parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
 parser.add_argument('--fp_word_embd_dim',  default=300, type=int)
 parser.add_argument('--fp_embd_dim',  default=300, type=int)
@@ -137,8 +137,12 @@ def train(data, use_mask = True):
     if use_mask == True:
         qmask = Variable(data['qmask'], requires_grad=False) # qmask: [B, T]
         amask = Variable(data['amask'], requires_grad=False) # amask: [B, T]
-        matching, q_attn_list, a_attn_list = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening,
-                               concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3], list of [B, H, T1, T2]
+        if args.model_name == 'semultitask':
+            matching, q_attn_list, a_attn_list = model(q1, a1, qmask, amask, None, None, sharpening=args.sharpening,
+                                   concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3], list of [B, H, T1, T2]
+        else:
+            matching, q_attn_list, a_attn_list = model(q1, a1, qmask, amask, concept_qa, concept_aq, sharpening=args.sharpening,
+                                   concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3], list of [B, H, T1, T2]
     else:
         matching, q_attn_list, a_attn_list = model(q1, a1, concept_qa, concept_aq, sharpening=args.sharpening,
                                concept_attention=args.concept_attention, alpha=args.alpha) # [B, 3]
@@ -406,7 +410,7 @@ if __name__ == "__main__":
                          word_embd_dim=args.fp_word_embd_dim,
                          num_concepts=args.num_concepts)
 
-    elif args.model_name == 'SEMH':
+    elif args.model_name.lower() == 'semh':
         import models.SEmultiHead as net
         model = net.SEMH(hidden_size = args.hidden_size, drop_rate = args.droprate,
                          num_layers = args.num_layers,

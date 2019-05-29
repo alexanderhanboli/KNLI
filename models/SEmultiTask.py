@@ -75,7 +75,7 @@ def clones(module, N):
     "Produce N identical layers."
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
 
-def attention(query, key, value, mask=None, dropout=None):
+def attention(query, key, value, mask=None, dropout=None, qa_concept=None):
     '''
      Compute Scale Dot product
      query, key, value are B*T*D
@@ -86,6 +86,10 @@ def attention(query, key, value, mask=None, dropout=None):
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) \
              / math.sqrt(d_k) # [B, H, T1, T2]
+
+    if qa_concept is not None:
+        scores = 100*qa_concept.permute(0,3,1,2)
+
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e8)
 
@@ -157,7 +161,7 @@ class MultiHeadedAttn(nn.Module):
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value, mask=None):
+    def forward(self, query, key, value, mask=None, qa_concept=None):
         '''
             query, key, value are B*T*D
             B: is batch size
@@ -189,7 +193,7 @@ class MultiHeadedAttn(nn.Module):
         # Step 3) do attention
         # query, key, value are all of the shape [B, heads, T, d_k]
         ##
-        x, self.attn  = attention(query, key, value, mask=mask, dropout=self.dropout) # attn [B, H, T1, T2]
+        x, self.attn  = attention(query, key, value, mask=mask, dropout=self.dropout, qa_concept=qa_concept) # attn [B, H, T1, T2]
 
         ##
         # Step 4.1) "Concat" using a view
@@ -296,13 +300,15 @@ class CrEncoder(nn.Module):
         self.norm = LayerNorm(layer.size, eps=1e-12)
         self.concept_layers = concept_layers
 
-    def forward(self, x, m, qmask=None, amask=None):
+    def forward(self, x, m, qmask=None, amask=None, qa_concept=None):
         "Pass the input (and mask) through each layer in turn."
         attn_list = []
         for i, layer in enumerate(self.layers):
-            x, attn = layer(x, m, qmask, amask)
             if i in self.concept_layers:
+                x, attn = layer(x, m, qmask, amask, qa_concept)
                 attn_list.append(attn)
+            else:
+                x, attn = layer(x, m, qmask, amask, None)
 
         return self.norm(x), attn_list
 
@@ -320,17 +326,17 @@ class CrEncoderLayer(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.size = size
 
-    def forward(self, x, m, qmask=None, amask=None):
+    def forward(self, x, m, qmask=None, amask=None, qa_concept=None):
 
         # self attention layer w/ resnet
         res = self.norm_in(x)
-        res, _ = self.self_attn(res, res, res, qmask)
+        res, _ = self.self_attn(res, res, res, qmask, None)
         res = self.dropout(res)
         x = x + res
 
         # cross attention
         res = self.norm_mid(x)
-        res, attn = self.cross_attn(res, m, m, amask)
+        res, attn = self.cross_attn(res, m, m, amask, qa_concept)
         res = self.dropout(res)
         x = x + res
 
@@ -462,8 +468,8 @@ class SEMultitask(nn.Module):
         answer   = self.encoder_a(answer, amask)
 
         # self-attention again
-        question, q_attn_list = self.encoder_qa(question, answer, qmask, amask)
-        answer, a_attn_list   = self.encoder_aq(answer, question, amask, qmask)
+        question, q_attn_list = self.encoder_qa(question, answer, qmask, amask, qa_concept)
+        answer, a_attn_list   = self.encoder_aq(answer, question, amask, qmask, aq_concept)
 
         # pooling
         q_ave = torch.mean( question, dim=1, keepdim=False ) # [B, D]
