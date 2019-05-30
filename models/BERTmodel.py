@@ -239,11 +239,9 @@ class PositionalEncoding(nn.Module):
         # Compute the positional encodings once in log space.
         self.position_embeddings = nn.Embedding(max_len, d_model)
 
-    def forward(self, x):
-        seq_length = x.size(1) # T
-        position_ids = torch.arange(seq_length, dtype=torch.long, device=x.device)
-        position_ids = position_ids.unsqueeze(0).expand(x.size(0), x.size(1)) # [B, T]
-        position_embeddings = self.position_embeddings(position_ids) # [B, T, D]
+    def forward(self, x, position_ids):
+        # position_ids [B, T]
+        position_embeddings = self.position_embeddings(position_ids.long()) # [B, T, D]
         x = x + position_embeddings
         x = self.norm(x)
         return self.dropout(x)
@@ -259,7 +257,7 @@ class SegmentEncoding(nn.Module):
 
     def forward(self, x, segment_ids):
         # segment_ids [B, T]
-        segment_embeddings = self.segment_embeddings(segment_ids) # [B, T, D]
+        segment_embeddings = self.segment_embeddings(segment_ids.long()) # [B, T, D]
         x = x + segment_embeddings
         x = self.norm(x)
         return self.dropout(x)
@@ -314,13 +312,16 @@ class Classifier(nn.Module):
 
         super(Classifier, self).__init__()
 
+        self.linear = nn.Linear(2 * hidden_size, 2 * hidden_size)
+        self.activation = nn.Tanh()
         self.dropout = nn.Dropout(dropout)
-        self.simf = nn.Linear(hidden_size, 3)
+        self.simf = nn.Linear(2 * hidden_size, 3)
 
     def forward(self, input):
         '''
         x: [B, T, D]
         '''
+        input = self.activation(self.linear(input))
         score = self.simf(self.dropout(input)) # [B, 3]
 
         return score
@@ -398,7 +399,7 @@ class BERTse(nn.Module):
             for p in module:
                 self.orthogonal_weights(p)
 
-    def forward(self, qa, segment_ids, mask=None, concept=None):
+    def forward(self, qa, segment_ids, position_ids, mask=None, concept=None):
         '''
          input : batch, seq_len
                 qxlen [qx, lenx]
@@ -415,7 +416,7 @@ class BERTse(nn.Module):
         qa = self.highway(qa)
 
         # input encoding
-        qa = self.position(qa) # add positional encoding
+        qa = self.position(qa, position_ids) # add positional encoding
         qa = self.segment(qa, segment_ids)
 
         # encoder
@@ -423,7 +424,10 @@ class BERTse(nn.Module):
 
         # pooling
         qa_pool = qa[:,0,:].squeeze(1) # use CLS token as pooled vector [B, D]
+        qa_max = torch.max( qa, dim=1 )[0].squeeze(1) # [B, D]
 
-        score = self.classifier(qa_pool) # [B, 3]
+        qa = torch.cat( (qa_pool, qa_max), -1 ) # [B, 2*D]
+
+        score = self.classifier(qa) # [B, 3]
 
         return score

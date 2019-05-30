@@ -173,6 +173,12 @@ class BertBatchDataLoader(Dataset):
             segment_ids = segment_ids[:self.max_len]
         segment_ids = np.array(segment_ids)
 
+        position_ids = np.concatenate([np.arange(len(query)), np.arange(len(answer))])
+        if len(position_ids) < self.max_len:
+            position_ids = np.concatenate([position_ids, np.zeros(self.max_len - len(position_ids))])
+        else:
+            position_ids = position_ids[:self.max_len]
+
         label = int(self.data[idx]['label'])
         concept_map = None
         query_length = len(query)
@@ -208,6 +214,7 @@ class BertBatchDataLoader(Dataset):
 
         data  = {'qa':vecQA,
                  'segment_ids':segment_ids,
+                 'position_ids':position_ids,
                  'concept':concept_map,
                  'mask':mask,
                  'label':label,

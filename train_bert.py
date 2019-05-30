@@ -55,7 +55,7 @@ parser.add_argument('--max_grad_norm', type=int, default=1)
 # Model params
 parser.add_argument('--droprate', type=float, default=0.1)
 parser.add_argument('--hidden_size', type=int, default=512)
-parser.add_argument('--num_layers', type=int, default=1)
+parser.add_argument('--num_layers', type=int, default=3)
 parser.add_argument('--heads', type=int, default=5)
 parser.add_argument('--concept_layers', type=str, default='-1')
 
@@ -108,8 +108,8 @@ def train(data, use_mask = True):
         label: [B]
     '''
     model.train()
-    qa, label, concept, segment_ids = data['qa'], data['label'], data['concept'], data['segment_ids']
-    qa, label, concept, segment_ids = Variable(qa), Variable(label), Variable(concept), Variable(segment_ids)
+    qa, label, concept, segment_ids, position_ids = data['qa'], data['label'], data['concept'], data['segment_ids'], data['position_ids']
+    qa, label, concept, segment_ids, position_ids = Variable(qa), Variable(label), Variable(concept), Variable(segment_ids), Variable(position_ids)
 
     # setup the optim
     if args.opt == 'original':
@@ -121,9 +121,9 @@ def train(data, use_mask = True):
     # feed data through the model
     if use_mask == True:
         mask = Variable(data['mask'], requires_grad=False) # mask: [B, T]
-        matching = model(qa, segment_ids, mask, concept) # [B, 3], list of [B, H, T1, T2]
+        matching = model(qa, segment_ids, position_ids, mask, concept) # [B, 3], list of [B, H, T1, T2]
     else:
-        matching = model(qa, segment_ids, None, concept)
+        matching = model(qa, segment_ids, position_ids, None, concept)
 
     # calculate loss
     criterion = nn.CrossEntropyLoss()
@@ -133,7 +133,7 @@ def train(data, use_mask = True):
     loss.backward()
     optimizer.step()
 
-    del qa, label, concept, segment_ids
+    del qa, label, concept, segment_ids, position_ids
 
     return loss.data.item()
 
@@ -144,8 +144,8 @@ def evaluate(data, use_mask = True, print_out = False):
     '''
     model.eval() # switch off the dropout if applied
 
-    qa, label, concept, segment_ids = data['qa'], data['label'], data['concept'], data['segment_ids']
-    qa, label, concept, segment_ids = Variable(qa), Variable(label), Variable(concept), Variable(segment_ids)
+    qa, label, concept, segment_ids, position_ids = data['qa'], data['label'], data['concept'], data['segment_ids'], data['position_ids']
+    qa, label, concept, segment_ids, position_ids = Variable(qa), Variable(label), Variable(concept), Variable(segment_ids), Variable(position_ids)
 
     mem_size = qa.size()[1]
     b_size = qa.size()[0]
@@ -153,9 +153,9 @@ def evaluate(data, use_mask = True, print_out = False):
     # feed data through the model
     if use_mask == True:
         mask = Variable(data['mask'], requires_grad=False) # qmask: [B, T]
-        matching = model(qa, segment_ids, mask, concept) # [B, 3], list of [B, H, T1, T2]
+        matching = model(qa, segment_ids, position_ids, mask, concept) # [B, 3], list of [B, H, T1, T2]
     else:
-        matching = model(qa, segment_ids, None, concept)
+        matching = model(qa, segment_ids, position_ids, None, concept)
 
     # calculate word importance
     criterion = nn.CrossEntropyLoss()
@@ -181,7 +181,7 @@ def evaluate(data, use_mask = True, print_out = False):
         print("\rf1 is {}, precision is {}, recall is {}, accuracy is {}".format(f1, precision, recall, 1.0*correct/len(label)))
         print('\r-----------------------------------------------------------\n')
 
-    del qa, label, concept, segment_ids
+    del qa, label, concept, segment_ids, position_ids
 
     return loss_eval.data.item(), correct, f1, precision, recall, b_size
 
