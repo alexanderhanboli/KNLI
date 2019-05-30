@@ -241,10 +241,11 @@ class PositionalEncoding(nn.Module):
 
     def forward(self, x, position_ids):
         # position_ids [B, T]
-        position_embeddings = self.position_embeddings(position_ids.long()) # [B, T, D]
+        position_ids = torch.arange(x.size(1), dtype=torch.long, device=x.device)
+        position_ids = position_ids.unsqueeze(0).expand(x.size(0), x.size(1)) # [B, T]
+        position_embeddings = self.position_embeddings(position_ids) # [B, T, D]
         x = x + position_embeddings
-        x = self.norm(x)
-        return self.dropout(x)
+        return x
 
 class SegmentEncoding(nn.Module):
     "Implement the SE function."
@@ -273,6 +274,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, mask=None, concept=None, lambd=5.0):
         "Pass the input (and mask) through each layer in turn."
+        pdb.set_trace()
         for i, layer in enumerate(self.layers):
             if i in self.concept_layers:
                 x = layer(x, mask, concept, lambd)
@@ -312,10 +314,10 @@ class Classifier(nn.Module):
 
         super(Classifier, self).__init__()
 
-        self.linear = nn.Linear(2 * hidden_size, 2 * hidden_size)
+        self.linear = nn.Linear(3 * hidden_size, 3 * hidden_size)
         self.activation = nn.Tanh()
         self.dropout = nn.Dropout(dropout)
-        self.simf = nn.Linear(2 * hidden_size, 3)
+        self.simf = nn.Linear(3 * hidden_size, 3)
 
     def forward(self, input):
         '''
@@ -360,7 +362,8 @@ class BERTse(nn.Module):
         ff = PositionwiseFeedForward(d_model=embd_dim, d_ff=hidden_size, dropout=drop_rate)
 
         self.encoder = Encoder(layer = EncoderLayer(size=embd_dim, self_attn=c(attn),
-                                                feed_forward=c(ff), dropout=drop_rate), N=num_layers)
+                                                feed_forward=c(ff), dropout=drop_rate),
+                                N=num_layers, concept_layers=concept_layers)
 
         # projection layer
         self.classifier = Classifier(hidden_size=embd_dim, dropout=drop_rate)
@@ -423,10 +426,11 @@ class BERTse(nn.Module):
         qa = self.encoder(qa, mask, concept, 50.0) # encode with self-attention [B, T, D]
 
         # pooling
-        qa_pool = qa[:,0,:].squeeze(1) # use CLS token as pooled vector [B, D]
+        qa_pool = qa[:, 0].squeeze(1) # use CLS token as pooled vector [B, D]
         qa_max = torch.max( qa, dim=1 )[0].squeeze(1) # [B, D]
+        qa_ave = torch.mean( qa, dim=1, keepdim=False ) # [B, D]
 
-        qa = torch.cat( (qa_pool, qa_max), -1 ) # [B, 2*D]
+        qa = torch.cat( (qa_pool, qa_max, qa_ave), -1 ) # [B, 3*D]
 
         score = self.classifier(qa) # [B, 3]
 

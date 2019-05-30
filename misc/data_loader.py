@@ -157,25 +157,25 @@ class BertBatchDataLoader(Dataset):
         premise = self.data[idx]['premise']
         hypothesis = self.data[idx]['hypothesis']
 
-        query = ['CLS'] + self.data[idx]['premise_tokens'] + ['EOS']
+        query = ['CLS'] + self.data[idx]['premise_tokens'] + ['SEP']
         query_segment = [0] * len(query)
 
-        answer = self.data[idx]['hypothesis_tokens'] + ['EOS']
+        answer = self.data[idx]['hypothesis_tokens'] + ['SEP']
         answer_segment = [1] * len(answer)
 
-        query_lemma = ['CLS'] + self.data[idx]['premise_lemmas'] + ['EOS']
-        answer_lemma = self.data[idx]['hypothesis_lemmas'] + ['EOS']
+        query_lemma = ['CLS'] + self.data[idx]['premise_lemmas'] + ['SEP']
+        answer_lemma = self.data[idx]['hypothesis_lemmas'] + ['SEP']
 
         segment_ids = query_segment + answer_segment
         if len(segment_ids) < self.max_len:
             segment_ids = segment_ids + [0] * (self.max_len - len(segment_ids))
         else:
             segment_ids = segment_ids[:self.max_len]
-        segment_ids = np.array(segment_ids)
+        segment_ids = np.array(segment_ids, dtype = np.float32)
 
-        position_ids = np.concatenate([np.arange(len(query)), np.arange(len(answer))])
+        position_ids = np.concatenate([np.arange(len(query), dtype = np.float32), np.arange(len(answer), dtype = np.float32)])
         if len(position_ids) < self.max_len:
-            position_ids = np.concatenate([position_ids, np.zeros(self.max_len - len(position_ids))])
+            position_ids = np.concatenate([position_ids, np.zeros(self.max_len - len(position_ids), dtype = np.float32)])
         else:
             position_ids = position_ids[:self.max_len]
 

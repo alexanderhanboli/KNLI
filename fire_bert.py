@@ -13,8 +13,8 @@ parser.add_argument('--description', default='==NEW==', type=str)
 parser.add_argument('--gpu', type=str, default='0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15', help='used gpu')
 # parser.add_argument('--gpu', type=str, default='0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15', help='used gpu')
 parser.add_argument('--cp',  default=False, action='store_true')
-parser.add_argument('--fp_train', default='./data/snli/snli_data.json')
-parser.add_argument('--fp_val',   default='./data/snli/snli_data.json')
+parser.add_argument('--fp_train', default='./data/mnli/mnli_data.json')
+parser.add_argument('--fp_val',   default='./data/mnli/mnli_data.json')
 parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
 parser.add_argument('--n_epochs', default=6, type=int)
 parser.add_argument('--concept_layers', type=str, default='-1')
@@ -100,7 +100,7 @@ if __name__ == "__main__":
         opt['beta2'] = choice([0.999])
 
         # tune
-        opt['num_layers'] = choice([8])
+        opt['num_layers'] = choice([3])
         opt['batch_size'] = choice([16, 32])
 
         # cmd
