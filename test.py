@@ -119,7 +119,7 @@ def evaluate(data, params, use_mask = True, print_out = False):
     #     print("\rf1 is {}, precision is {}, recall is {}, accuracy is {}".format(f1, precision, recall, 1.0*correct/len(label)))
     #     print('\r-----------------------------------------------------------\n')
 
-    return loss_eval.data.item(), correct, f1, precision, recall, b_size
+    return loss_eval.data.item(), correct, f1, precision, recall, b_size, pred_class.numpy(), label.numpy()
 
 # main
 if __name__ == "__main__":
@@ -251,6 +251,8 @@ if __name__ == "__main__":
     test_recall = np.zeros(3)
     test_f1 = np.zeros(3)
     total_data = 0.0
+    pred_class = []
+    label = []
 
     for j, sample in enumerate(test_loader, 0):
         print_out = False
@@ -266,13 +268,19 @@ if __name__ == "__main__":
         test_precision += test_stat[3]
         test_recall += test_stat[4]
         total_data += test_stat[5]
+        pred_class += list(test_stat[6])
+        label += list(test_stat[7])
 
 
     test_accuracy = test_correct / total_data
-    test_f1 = test_f1 / len(test_loader)
-    test_precision = test_precision / len(test_loader)
-    test_recall = test_recall / len(test_loader)
+    # test_f1 = test_f1 / len(test_loader)
+    # test_precision = test_precision / len(test_loader)
+    # test_recall = test_recall / len(test_loader)
     test_loss = test_loss / len(test_loader)
+
+    test_precision = metrics.precision_score(np.array(label), np.array(pred_class), labels=[0,1,2], average=None)
+    test_recall = metrics.recall_score(np.array(label), np.array(pred_class), labels=[0,1,2], average=None)
+    test_f1 = metrics.f1_score(np.array(label), np.array(pred_class), labels=[0,1,2], average=None)
 
     results['accuracy'] = test_accuracy
     # results['f1'] = test_f1

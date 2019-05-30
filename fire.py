@@ -16,9 +16,9 @@ parser.add_argument('--cp',  default=False, action='store_true')
 parser.add_argument('--fp_train', default='./data/mnli/mnli_data.json')
 parser.add_argument('--fp_val',   default='./data/mnli/mnli_data.json')
 parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
-parser.add_argument('--n_epochs', default=6, type=int)
-parser.add_argument('--concept_attention', default='full', type=str, choices=['full', 'easy'])
-# parser.add_argument('--concept_layers', type=str, default='-1')
+parser.add_argument('--n_epochs', default=5, type=int)
+# parser.add_argument('--concept_attention', default='full', type=str, choices=['full', 'easy'])
+parser.add_argument('--concept_layers', type=str, default='-1')
 
 # test data
 # parser.add_argument('--ftest', default='hho_RT_new_splits.json')
@@ -76,8 +76,8 @@ if __name__ == "__main__":
     opt['n_epochs'] = args.n_epochs
     opt['model_name'] = args.model_name
     opt['description'] = args.description
-    opt['concept_attention'] = args.concept_attention
-    # opt['concept_layers'] = args.concept_layers
+    # opt['concept_attention'] = args.concept_attention
+    opt['concept_layers'] = args.concept_layers
 
     create_log_dir(os.path.join(root_folder_data,'logs'))
 
@@ -88,24 +88,24 @@ if __name__ == "__main__":
 
         random_id = str(randrange(10)) + str(int(time.time()))[-6:] # just returns 6 numbers
 
-        opt['concept_layers'] = choice(['0', '0,1', '0,1,2'])
+        # opt['concept_layers'] = choice(['0', '0,1', '0,1,2'])
 
         opt['opt'] = choice(['bert'])
-        opt['lr'] = choice([6.25e-5, 1.00e-4])
-        opt['lr_warmup'] = choice([0.01, 0.05])
+        opt['lr'] = choice([1.00e-4])
+        opt['lr_warmup'] = choice([0.10])
         opt['l2']  = choice([0.01])
         opt['hidden_size']  = choice([512])
         opt['heads'] = choice([5]) # divisible for 300
         opt['droprate'] =  choice([0.10])
         # opt['multitask_scale'] = choice([1.0, 2.0, 4.0])
-        opt['num_layers'] = choice([3, 6])
-        opt['num_layers_cross'] = choice([3, 6])
+        opt['num_layers'] = choice([1])
+        opt['num_layers_cross'] = choice([idx+4])
         opt['sharpening'] = choice([False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1
         opt['print_every'] = 2000
         opt['loader_num_workers'] = 4
-        opt['batch_size'] = choice([8, 16])
+        opt['batch_size'] = choice([32])
         opt['checkpoint_every'] = 20
         opt['seed_random'] = 822 #np.random.randint(100, 10000)
         # opt['lr_decay'] = choice([10**uniform(-1.2,-.01), 1])
