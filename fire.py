@@ -18,7 +18,7 @@ parser.add_argument('--fp_val',   default='./data/mnli/mnli_data.json')
 parser.add_argument('--fp_embd',  default='./data/glove/glove.840B.300d.txt')
 parser.add_argument('--n_epochs', default=5, type=int)
 # parser.add_argument('--concept_attention', default='full', type=str, choices=['full', 'easy'])
-parser.add_argument('--concept_layers', type=str, default='-1')
+parser.add_argument('--concept_layers', type=str, default='0,1,2')
 
 # test data
 # parser.add_argument('--ftest', default='hho_RT_new_splits.json')
@@ -98,8 +98,9 @@ if __name__ == "__main__":
         opt['heads'] = choice([5]) # divisible for 300
         opt['droprate'] =  choice([0.10])
         # opt['multitask_scale'] = choice([1.0, 2.0, 4.0])
-        opt['num_layers'] = choice([1])
-        opt['num_layers_cross'] = choice([idx+4])
+        opt['num_layers'], opt['num_layers_cross'] = [[1,3], [1,4], [2,3], [2,4]][idx]
+        # opt['num_layers'] = choice([1,2])
+        # opt['num_layers_cross'] = choice([3,4])
         opt['sharpening'] = choice([False])
         # opt['neg_sampling_ratio'] = choice([1, 2])
         opt['val_interval'] = 1
