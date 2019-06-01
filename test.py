@@ -39,6 +39,8 @@ parser.add_argument('--batch_size',  type=int, default=32)
 #printing information
 parser.add_argument('--print_mode', default='json', choices=['json', 'simple'])
 
+# parser.add_argument('--concept_layers', type=str, default='-1')
+
 
 def Variable(data, *args, **kwargs):
     if USE_CUDA:
